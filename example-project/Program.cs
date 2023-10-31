@@ -1,14 +1,14 @@
-//This project uses new C# templates to generate top-level statements
+// This project uses new C# templates to generate top-level statements
 // See https://aka.ms/new-console-template for more information
 
 /**
- * This project showcases logging to Logtail
+ * This project showcases logging to Better Stack
  */
 
 using NLog;
 
 // Configure NLog to color properties based on their type
-NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new Logtail.NLog.ColorValueFormatter();
+NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new BetterStack.Logs.NLog.ColorValueFormatter();
 
 // Create logger for current class
 var logger = LogManager.GetCurrentClassLogger();
@@ -20,7 +20,7 @@ var logger = LogManager.GetCurrentClassLogger();
 logger.Trace("Tracing the code!");
 
 //Send debug messages using the Debug() method
-logger.Debug("Debugging is hard, but can be easier with Logtail!");
+logger.Debug("Debugging is hard, but can be easier with Better Stack!");
 
 //Send informative messages about application progress using the Info() method
 //All of the properties that you pass to the log will be stored in a structured
@@ -36,4 +36,4 @@ logger.Error("Error occurred! And it's not good.");
 //Report fatal errors that coused application to crash using the Fatal() method
 logger.Fatal("Application crashed! Needs to be fixed ASAP!");
 
-Console.WriteLine("All done! Now, you can check Logtail to see your logs");
+Console.WriteLine("All done! Now, you can check Better Stack to see your logs");

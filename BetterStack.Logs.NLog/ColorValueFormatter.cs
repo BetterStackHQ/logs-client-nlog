@@ -6,7 +6,7 @@ using NLog.Targets;
 using NLog.Layouts;
 using NLog.MessageTemplates;
 
-namespace Logtail.NLog
+namespace BetterStack.Logs.NLog
 {
     public class ColorValueFormatter : IValueFormatter
     {

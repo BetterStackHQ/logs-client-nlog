@@ -1,16 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PackageId>Logtail</PackageId>
-    <Version>0.2.6</Version>
+    <PackageId>BetterStack.Logs.NLog</PackageId>
+    <Version>1.0.0</Version>
     <Authors>Simon Rozsival, Tomas Hromada</Authors>
     <Company>Better Stack</Company>
     <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
-    <PackageProjectUrl>https://logtail.com</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/logtail/logtail-dotnet</RepositoryUrl>
+    <PackageProjectUrl>https://logs.betterstack.com</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/BetterStackHQ/logs-client-nlog</RepositoryUrl>
     <RespositoryType>git</RespositoryType>
-    <Tags>logging logtail livetail nlog</Tags>
+    <Tags>betterstack logging livetail nlog</Tags>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
 
