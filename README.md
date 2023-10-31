@@ -1,6 +1,6 @@
 # [Better Stack](https://betterstack.com/logs) .NET NLog client
 
-[![Better Stack dashboard](https://github.com/logtail/logtail-python/assets/10132717/e2a1196b-7924-4abc-9b85-055e17b5d499)](https://betterstack.com/logs)
+[![Better Stack dashboard](https://raw.githubusercontent.com/BetterStackHQ/logs-client-nlog/main/dashboard.png)](https://betterstack.com/logs)
 
 [![ISC License](https://img.shields.io/badge/license-ISC-ff69b4.svg)](LICENSE.md)
 [![Nuget version](https://badge.fury.io/nu/BetterStack.Logs.NLog.svg)](https://www.nuget.org/packages/BetterStack.Logs.NLog)
