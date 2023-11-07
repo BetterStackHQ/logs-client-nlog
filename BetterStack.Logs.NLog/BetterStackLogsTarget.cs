@@ -5,26 +5,26 @@ using NLog.Config;
 using NLog.Targets;
 using NLog.Layouts;
 
-namespace Logtail.NLog
+namespace BetterStack.Logs.NLog
 {
     /// <summary>
-    /// NLog target for Logtail. This target does not send all the events individually
-    /// to the Logtail server but it sends them periodically in batches.
+    /// NLog target for Better Stack Logs. This target does not send all the events individually
+    /// to the Better Stack server but it sends them periodically in batches.
     /// </summary>
-    [Target("Logtail")]
-    public sealed class LogtailTarget : TargetWithContext
+    [Target("BetterStack.Logs")]
+    public sealed class BetterStackLogsTarget : TargetWithContext
     {
         /// <summary>
-        /// Gets or sets the Logtail source token.
+        /// Gets or sets the Better Stack Logs source token.
         /// </summary>
         /// <value>The source token.</value>
         [RequiredParameter]
         public Layout SourceToken { get; set; }
 
         /// <summary>
-        /// The Logtail endpoint.
+        /// The Better Stack Logs endpoint.
         /// </summary>
-        public Layout Endpoint { get; set; } = "https://in.logtail.com";
+        public Layout Endpoint { get; set; } = "https://in.logs.betterstack.com";
 
         /// <summary>
         /// Maximum logs sent to the server in one batch.
@@ -79,12 +79,12 @@ namespace Logtail.NLog
         }
         private StackTraceUsage _stackTraceUsage;
 
-        private Drain logtail = null;
+        private Drain betterStackDrain = null;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="LogtailTarget"/> class.
+        /// Initializes a new instance of the BetterStack.Logs.NLog.BetterStackLogsTarget class.
         /// </summary>
-        public LogtailTarget()
+        public BetterStackLogsTarget()
         {
             StackTraceUsage = StackTraceUsage.Max;
         }
@@ -92,7 +92,7 @@ namespace Logtail.NLog
         /// <inheritdoc/>
         protected override void InitializeTarget()
         {
-            logtail?.Stop().Wait();
+            betterStackDrain?.Stop().Wait();
 
             var sourceToken = RenderLogEvent(SourceToken, LogEventInfo.CreateNullEvent());
             var endpoint = RenderLogEvent(Endpoint, LogEventInfo.CreateNullEvent());
@@ -103,7 +103,7 @@ namespace Logtail.NLog
                 retries: Retries
             );
 
-            logtail = new Drain(
+            betterStackDrain = new Drain(
                 client,
                 period: TimeSpan.FromMilliseconds(FlushPeriodMilliseconds),
                 maxBatchSize: MaxBatchSize
@@ -115,7 +115,7 @@ namespace Logtail.NLog
         /// <inheritdoc/>
         protected override void CloseTarget()
         {
-            logtail?.Stop().Wait();
+            betterStackDrain?.Stop().Wait();
             base.CloseTarget();
         }
 
@@ -156,7 +156,7 @@ namespace Logtail.NLog
                 Context = contextDictionary
             };
 
-            logtail.Enqueue(log);
+            betterStackDrain.Enqueue(log);
         }
     }
 }

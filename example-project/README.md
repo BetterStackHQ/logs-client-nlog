@@ -1,6 +1,6 @@
 # Example project
 
-To help you get started with using Logtail in your .NET projects, we have prepared a simple program that showcases the usage of Logtail logger.
+To help you get started with using BetterStack in your .NET projects, we have prepared a simple program that showcases the usage of BetterStack logger.
 
 ## Download and install the example project
 
@@ -8,19 +8,19 @@ You can download the example project from GitHub directly or you can clone it to
 
 ## Run the example project using Visual Studio
  
-Replace `<source-token>` with your actual source token in the `nlog.config` file. You can find your source token by going to logtail.com -> sources -> edit.
+Replace `<source-token>` with your actual source token in the `nlog.config` file. You can find your source token by going to [Better Stack Logs](https://logs.betterstack.com/dashboard) -> sources -> edit.
 
-Open the `.csproj` file in the Visual Studio. Then click on the green play button `DotNetLogtail` or press **F5** to run the application.
+Open the `.csproj` file in the Visual Studio. Then click on the green play button `ExampleProject` or press **F5** to run the application.
 
 You should see the following output:
 
 ```powershell
-All done! Now, you can check Logtail to see your logs
+All done! Now, you can check Better Stack to see your logs
 ```
 
 ## Run in the command line
 
-Replace `<source-token>` with your actual source token in the `nlog.config` file. You can find your source token by going to logtail.com -> sources -> edit.
+Replace `<source-token>` with your actual source token in the `nlog.config` file. You can find your source token by going to [Better Stack Logs](https://logs.betterstack.com/dashboard) -> sources -> edit.
 
 Open the command line in the projects directory and enter the following command:
 
@@ -31,16 +31,18 @@ dotnet run
 You should see the following output:
 
 ```powershell
-All done! Now, you can check Logtail to see your logs
+All done! Now, you can check Better Stack to see your logs
 ```
 
 # Setup
 
-This part shows and explains the usage of the Logtail package for .NET as shown in the example application
+This part shows and explains the usage of the `BetterStack.Logs.NLog` package for .NET as shown in the example application
 
 ## Create NLog config
 
-In the root directory of the project create the `nlog.config` file or copy the file from the example project. In Visual Studio, you can press **Ctrl + Shift + A** and enter the file name. This file is used to configure NLog using XML syntax. The content of the file should look like this:
+In the root directory of the project, create the `nlog.config` file or copy the file from the example project.
+In Visual Studio, you can press **Ctrl + Shift + A** and enter the file name.
+This file is used to configure NLog using XML syntax. The content of the file should look like this:
 
 ```xml
 <?xml version="1.0" encoding="utf-8" ?>
@@ -50,16 +52,16 @@ In the root directory of the project create the `nlog.config` file or copy the f
         internalLogLevel="Warn"
         internalLogFile="internal.txt">
 	<extensions>
-		<add assembly="Logtail" />
+		<add assembly="BetterStack.Logs.NLog" />
 	</extensions>
 
 	<targets>
 		<!-- Dont forget to change SOURCE_TOKEN to your actual source token-->
-		<target xsi:type="Logtail" name="logtail" layout="${message}" sourceToken="SOURCE_TOKEN" />
+		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="SOURCE_TOKEN" />
 	</targets>
 
 	<rules>
-		<logger name="*" minlevel="Trace" writeTo="logtail" />
+		<logger name="*" minlevel="Trace" writeTo="mybetterstack" />
 	</rules>
 </nlog>
 ```
@@ -82,7 +84,9 @@ Another way is to open the `.csproj` file and add the following directive:
 
 ## Create logger
 
-First, include the `NLog` library upon which the Logtail package was built. Then create a `Logger` instance which will be later used for sending log messages. To create a `Logger` instance, call `LogManager.GetCurrentClassLogger()` constructor. 
+First, include the `NLog` library upon which the Better Stack package was built.
+Then create a `Logger` instance which will be later used for sending log messages.
+To create a `Logger` instance, call `LogManager.GetCurrentClassLogger()` constructor. 
 
 ```csharp
 using NLog;
@@ -91,7 +95,8 @@ using NLog;
 var logger = LogManager.GetCurrentClassLogger();
 ```
 
-This will create a logger for the current class. In this case, it will be created for the `Program` class and it will add `“logger_string”` with the value `“Program”` to the context of the JSON log message.
+This will create a logger for the current class.
+In this case, it will be created for the `Program` class and it will add `"logger_string"` with the value `"Program"` to the context of the JSON log message.
 
 ### Colored property values
 
@@ -99,7 +104,7 @@ If you'd like your logged properties to be colored by their type, include follow
 
 ```csharp
 // Configure NLog to color properties based on their type
-NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new Logtail.NLog.ColorValueFormatter();
+NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new BetterStack.Logs.NLog.ColorValueFormatter();
 ```
 
 ### Filter logs
@@ -107,7 +112,7 @@ NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new Logtail.NLog.C
 The name of the logger will also be present in the log message which will look something like this:
 
 ```json
-"2022-01-26 10:25:06.0980|DEBUG|Program|Debugging is hard, but can be easier with Logtai!"
+"2022-01-26 10:25:06.0980|DEBUG|Program|Debugging is hard, but can be easier with Better Stack!"
 ```
 
 This provides an option to filter logs based on the logger that sends them. You can create a logger for each of the logical components of your application and then filter the logs based on the names of the components. 
@@ -131,13 +136,13 @@ The output will look similar to this:
       "logger_string":"ShoppingCart",
       "runtime":{
          "class_string":"ShoppingCart",
-         "file_string":"C:\\Users\\someuser\\source\\repos\\DotNetLogtail\\DotNetLogtail\\ShoppingCart.cs",
+         "file_string":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\ShoppingCart.cs",
          "line_integer":"16",
          "member_string":".ctor"
       }
    },
    "level_string":"Error",
-   "message_string":"2022-01-26 11:48:10.6354|ERROR|DotNetLogtail.ShoppingCart|Error !!!!!"
+   "message_string":"2022-01-26 11:48:10.6354|ERROR|ExampleProject.ShoppingCart|Error !!!!!"
 }
 ```
 
@@ -151,7 +156,8 @@ This will only show logs that were sent from to `ShoppingCart` logger.
 
 # Logging
 
-The `Logger` instance we created in the setup is used to send log messages to Logtail. It provides 6 logging methods for the 6 default log levels. The log levels and their method are:
+The `Logger` instance we created in the setup is used to send log messages to Better Stack.
+It provides 6 logging methods for the 6 default log levels. The log levels and their method are:
 
 - **TRACE** - Trace the code using the `Trace()` method
 - **DEBUG** - Send debug messages using the `Debug()` method
@@ -181,7 +187,7 @@ This will create the following JSON output:
       "logger_string":"Program",
       "runtime":{
          "class_string":"Program",
-         "file_string":"C:\\Users\\someuser\\source\\repos\\DotNetLogtail\\DotNetLogtail\\Program.cs",
+         "file_string":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
          "line_integer":"21",
          "member_string":"<Main>$"
       }
@@ -196,7 +202,7 @@ This will create the following JSON output:
       "logger_string":"Program",
       "runtime":{
          "class_string":"Program",
-         "file_string":"C:\\Users\\someuser\\source\\repos\\DotNetLogtail\\DotNetLogtail\\Program.cs",
+         "file_string":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
          "line_integer":"32",
          "member_string":"<Main>$"
       }
@@ -208,12 +214,13 @@ This will create the following JSON output:
 
 ## Additional configuration
 
-The Logtail target will send you logs periodically in batches to optimize network traffic with several retries in case of unexpected HTTP errors. You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMilliseconds`, and `retries` parameters to your custom values in your config.
+The BetterStack.Logs target will send you logs periodically in batches to optimize network traffic with several retries in case of unexpected HTTP errors.
+You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMilliseconds`, and `retries` parameters to your custom values in your config.
 
 ```xml
 <target
-   xsi:type="Logtail"
-   name="logtail"
+   xsi:type="BetterStack.Logs"
+   name="mybetterstack"
    layout="${message}"
    sourceToken="YOUR_SOURCE_TOKEN"
    maxBatchSize="200"
@@ -238,7 +245,7 @@ Code above will create the following output:
       "logger_string":"Program",
       "runtime":{
          "class_string":"Program",
-         "file_string":"D:\\dotnet_logtail\\Program.cs",
+         "file_string":"D:\\ExampleProject\\Program.cs",
          "line_integer":"25",
          "member_string":"<Main>$"
       },
