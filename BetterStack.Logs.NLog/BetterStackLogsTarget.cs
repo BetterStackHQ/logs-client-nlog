@@ -57,6 +57,11 @@ namespace BetterStack.Logs.NLog
         public bool IncludeGlobalDiagnosticContext { get; set; } = true;
 
         /// <summary>
+        /// Include Include ScopeContext's properties in logs.
+        /// </summary>
+        public bool IncludeScopeContext { get; set; } = false;
+
+        /// <summary>
         /// Control callsite capture of source-file and source-linenumber.
         /// </summary>
         public StackTraceUsage StackTraceUsage
@@ -147,6 +152,20 @@ namespace BetterStack.Logs.NLog
                     contextDictionary["gdc"] = gdcDict;
                 }
             }
+
+            if (IncludeScopeContext)
+            {
+                Dictionary<string, object> scopedProperties = null;
+                foreach (var prop in ScopeContext.GetAllProperties())
+                {
+                    if (scopedProperties == null)
+                        scopedProperties = new Dictionary<string, object>();
+                    scopedProperties[prop.Key] = prop.Value;
+                }
+                if (scopedProperties != null)
+                    contextDictionary["sc"] = scopedProperties;
+            }
+
             string logMessage = RenderLogEvent(this.Layout, logEvent);
 
             var log = new Log {
