@@ -104,7 +104,9 @@ If you'd like your logged properties to be colored by their type, include follow
 
 ```csharp
 // Configure NLog to color properties based on their type
-NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new BetterStack.Logs.NLog.ColorValueFormatter();
+NLog.LogManager.Setup().SetupSerialization(
+    setupBuilder => setupBuilder.RegisterValueFormatter(new BetterStack.Logs.NLog.ColorValueFormatter())
+);
 ```
 
 ### Filter logs
