@@ -8,7 +8,9 @@
 using NLog;
 
 // Configure NLog to color properties based on their type
-NLog.Config.ConfigurationItemFactory.Default.ValueFormatter = new BetterStack.Logs.NLog.ColorValueFormatter();
+NLog.LogManager.Setup().SetupSerialization(
+    setupBuilder => setupBuilder.RegisterValueFormatter(new BetterStack.Logs.NLog.ColorValueFormatter())
+);
 
 // Create logger for current class
 var logger = LogManager.GetCurrentClassLogger();
