@@ -7,8 +7,8 @@ To help you get started with using BetterStack in your .NET projects, we have pr
 You can download the example project from GitHub directly or you can clone it to a select directory.
 
 ## Run the example project using Visual Studio
- 
-Replace `<source-token>` with your actual source token in the `nlog.config` file. You can find your source token by going to [Better Stack Logs](https://logs.betterstack.com/dashboard) -> sources -> edit.
+
+Replace `<source_token>` and `<ingesting_host>` with your actual source token and ingesting host in the `nlog.config` file. You can find both values by going to [Better Stack Telemetry](https://telemetry.betterstack.com/dashboard) -> Sources -> Configure.
 
 Open the `.csproj` file in the Visual Studio. Then click on the green play button `ExampleProject` or press **F5** to run the application.
 
@@ -20,7 +20,8 @@ All done! Now, you can check Better Stack to see your logs
 
 ## Run in the command line
 
-Replace `<source-token>` with your actual source token in the `nlog.config` file. You can find your source token by going to [Better Stack Logs](https://logs.betterstack.com/dashboard) -> sources -> edit.
+Replace `<source_token>` and `<ingesting_host>` with your actual source token and ingesting host in the `nlog.config` file. You can find both values by going to [Better Stack Telemetry](https://telemetry.betterstack.com/dashboard) -> Sources -> Configure.
+
 
 Open the command line in the projects directory and enter the following command:
 
@@ -56,8 +57,8 @@ This file is used to configure NLog using XML syntax. The content of the file sh
 	</extensions>
 
 	<targets>
-		<!-- Dont forget to change SOURCE_TOKEN to your actual source token-->
-		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="SOURCE_TOKEN" />
+    <!-- Dont forget to change <source_token> and <ingesting_host> to your actual source token and ingesting host-->
+		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="<ingesting_host>" />
 	</targets>
 
 	<rules>
@@ -66,7 +67,7 @@ This file is used to configure NLog using XML syntax. The content of the file sh
 </nlog>
 ```
 
-Make sure that you replace `SOURCE_TOKEN` with the actual source token that you can find in the Source settings.
+Make sure that you replace `<source_token>` and `<ingesting_host>` with the actual source token and ingesting host that you can find in the Source settings.
 
 Also, **make sure that the** `nlog.config` **file is set to be copied to the output directory** when running the application. 
 
@@ -224,7 +225,8 @@ You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMillisec
    xsi:type="BetterStack.Logs"
    name="mybetterstack"
    layout="${message}"
-   sourceToken="YOUR_SOURCE_TOKEN"
+   sourceToken="<source_token>"
+   endpoint="<ingesting_host>"
    maxBatchSize="200"
    flushPeriodMilliseconds="1000"
    retries="3" />
