@@ -67,8 +67,16 @@ namespace BetterStack.Logs
             // XXX: We want the loop to run at least once, even if we stop
             //      the drain before the we manage to reach this point.
             do {
-                var flushDuration = await delayed(flush, nextDelay);
-                nextDelay = period - flushDuration;
+                try {
+                    var flushDuration = await delayed(flush, nextDelay);
+                    nextDelay = period - flushDuration;
+                } catch (Exception ex) {
+                    // This task must survive anything a single flush can throw. If it faults, the
+                    // loop is gone for good: nothing is ever delivered again and every subsequent
+                    // Enqueue is silently swallowed until the process restarts.
+                    global::NLog.Common.InternalLogger.Error(ex, "BetterStack.Logs: log delivery failed, retrying after the next period.");
+                    nextDelay = period;
+                }
             } while (!cancellationTokenSource.IsCancellationRequested);
         }
 
