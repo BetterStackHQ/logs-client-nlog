@@ -52,34 +52,50 @@ namespace BetterStack.Logs
         /// </summary>
         public async Task Send(IEnumerable<Log> logs)
         {
-            var content = serialize(logs);
+            var payload = serialize(logs);
 
             for (int i = 0; i < retries; ++i) {
                 await Task.Delay(TimeSpan.FromSeconds(i));
 
-                var success = await sendOnce(content);
+                var success = await sendOnce(payload);
                 if (success) break;
             }
         }
 
-        private async Task<bool> sendOnce(HttpContent content)
+        private async Task<bool> sendOnce(byte[] payload)
         {
             try {
-                var response = await httpClient.PostAsync("/", content);
-                return response.IsSuccessStatusCode;
-            } catch (TaskCanceledException) {
-                // request timed out, silent error
-            } catch (HttpRequestException) {
+                // Every attempt needs its own HttpContent. On .NET Framework, HttpClient disposes
+                // the request content as soon as the request completes -- on success, on 5xx, on
+                // timeout and on network error alike -- so reusing one instance makes every retry
+                // after the first throw ObjectDisposedException instead of reaching the server.
+                using (var content = buildContent(payload))
+                using (var response = await httpClient.PostAsync("/", content)) {
+                    return response.IsSuccessStatusCode;
+                }
+            } catch (TaskCanceledException ex) {
+                // request timed out
+                global::NLog.Common.InternalLogger.Warn(ex, "BetterStack.Logs: request timed out.");
+            } catch (HttpRequestException ex) {
                 // TODO: repeat only for certain HTTP errors (429, 5xx)
-                // some networking error, silent error
+                // some networking error
+                global::NLog.Common.InternalLogger.Warn(ex, "BetterStack.Logs: request failed.");
+            } catch (Exception ex) {
+                // An unexpected exception must never escape: it would fault the Drain's delivery
+                // task and silently stop all logging for the lifetime of the process.
+                global::NLog.Common.InternalLogger.Error(ex, "BetterStack.Logs: unexpected error while sending logs.");
             }
 
             return false;
         }
 
-        private HttpContent serialize(IEnumerable<Log> logs) {
+        private byte[] serialize(IEnumerable<Log> logs) {
             var payload = JsonConvert.SerializeObject(logs, settings);
-            var content = new ByteArrayContent(Encoding.UTF8.GetBytes(payload));
+            return Encoding.UTF8.GetBytes(payload);
+        }
+
+        private HttpContent buildContent(byte[] payload) {
+            var content = new ByteArrayContent(payload);
             content.Headers.Add("Content-Type", "application/json");
             return content;
         }
