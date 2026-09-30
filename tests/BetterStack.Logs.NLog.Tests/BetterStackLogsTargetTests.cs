@@ -449,5 +449,48 @@ namespace BetterStack.Logs.NLog.Tests
             Assert.Equal("Tracing the code!", (string)log["message"]);
             Assert.Equal("Trace", (string)log["level"]);
         }
+
+        [Fact]
+        public void ReportsMaxBatchSizeBelowOneAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.MaxBatchSize = 0;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: maxBatchSize is 0. Set it to 1 or more.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsFlushPeriodBelowOneMillisecondAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.FlushPeriodMilliseconds = 0;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: flushPeriodMilliseconds is 0. Set it to 1 or more.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsNegativeRetriesAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Retries = -1;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: retries is -1. Set it to 0 or more.", exception.Message);
+        }
+
+        [Fact]
+        public void AcceptsZeroRetries()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Retries = 0;
+
+            Assert.Null(Record.Exception(() => LoggerFor(target)));
+        }
     }
 }
