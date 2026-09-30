@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using NLog;
+using NLog.Common;
 using NLog.Config;
 using NLog.Targets;
 using NLog.Layouts;
@@ -125,6 +126,12 @@ namespace BetterStack.Logs.NLog
         {
             stopDrain();
             base.CloseTarget();
+        }
+
+        /// <inheritdoc/>
+        protected override void FlushAsync(AsyncContinuation asyncContinuation)
+        {
+            betterStackDrain.Flush().ContinueWith(task => asyncContinuation(task.Exception));
         }
 
         /// <inheritdoc/>

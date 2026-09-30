@@ -308,6 +308,26 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void DeliversPendingLogsOnFlush()
+        {
+            var target = Target();
+            target.FlushPeriodMilliseconds = 60000;
+            var logger = LoggerFor(target);
+
+            logger.Info("Before the first flush");
+            logFactory.Flush(TimeSpan.FromSeconds(10));
+
+            Assert.True(ingestion.HasRequest, "Flush returned before the pending log was delivered.");
+            Assert.Equal("Before the first flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            logger.Info("Before the second flush");
+            logFactory.Flush(TimeSpan.FromSeconds(10));
+
+            Assert.True(ingestion.HasRequest, "The second flush returned before the pending log was delivered.");
+            Assert.Equal("Before the second flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+        }
+
+        [Fact]
         public void DeliversPendingLogsOnShutdown()
         {
             var target = Target();
