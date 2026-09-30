@@ -252,7 +252,7 @@ The exception, with its stack trace, is sent in the top-level `exception` field:
 ## Additional configuration
 
 The BetterStack.Logs target will send you logs periodically in batches to optimize network traffic with several retries in case of unexpected HTTP errors.
-You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMilliseconds`, and `retries` parameters to your custom values in your config.
+You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMilliseconds`, and `retries` parameters to your custom values in your config. `retries` is how many times a failed request is retried after the first attempt, 10 by default.
 
 ```xml
 <target

@@ -38,7 +38,7 @@ namespace BetterStack.Logs.NLog
         public int FlushPeriodMilliseconds { get; set; } = 250;
 
         /// <summary>
-        /// The number of retries of failing HTTP requests.
+        /// How many times a failed HTTP request is retried after the first attempt. 0 sends every request once.
         /// </summary>
         public int Retries { get; set; } = 10;
 

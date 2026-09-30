@@ -66,7 +66,8 @@ namespace BetterStack.Logs
             var count = logs.Count();
             var payload = serialize(logs);
 
-            for (int i = 0; i < retries; ++i) {
+            // retries counts the attempts after the first one
+            for (int i = 0; i <= retries; ++i) {
                 await Task.Delay(TimeSpan.FromSeconds(i));
 
                 var statusCode = await sendOnce(payload);
@@ -82,7 +83,7 @@ namespace BetterStack.Logs
                 return;
             }
 
-            global::NLog.Common.InternalLogger.Error("BetterStack.Logs: dropped {0} logs after {1} failed attempts.", count, retries);
+            global::NLog.Common.InternalLogger.Error("BetterStack.Logs: dropped {0} logs after {1} failed attempts.", count, retries + 1);
         }
 
         /// <summary>
