@@ -3,6 +3,8 @@ using System.Linq;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NLog.Config;
+using NLog.Targets;
+using NLog.Targets.Wrappers;
 using Xunit;
 
 namespace BetterStack.Logs.NLog.Tests
@@ -142,6 +144,131 @@ namespace BetterStack.Logs.NLog.Tests
 
             var context = (JObject)Assert.Single(ingestion.NextRequest().Logs)["context"];
             Assert.False(context.ContainsKey("gdc"));
+        }
+
+        [Fact]
+        public void SendsObjectPropertiesAsJson()
+        {
+            var order = new { Id = 75423, Items = new[] { "book", "pen" }, PlacedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc), Note = (string)null };
+            LoggerFor(Target()).Info("Order {@order} placed in {elapsed}", order, TimeSpan.FromSeconds(1.5));
+
+            var properties = Assert.Single(ingestion.NextRequest().Logs)["context"]["properties"];
+            Assert.Equal(@"{""id"":75423,""items"":[""book"",""pen""],""placedAt"":""2026-01-02T03:04:05Z"",""note"":null}", properties["order"].ToString(Newtonsoft.Json.Formatting.None));
+            Assert.Equal("00:00:01.5000000", (string)properties["elapsed"]);
+        }
+
+        [Fact]
+        public void OmitsScopePropertiesByDefault()
+        {
+            var logger = LoggerFor(Target());
+
+            using (PushScopeProperty("requestId", "req-123")) {
+                logger.Info("User {user} signed in", "Josh");
+            }
+
+            var properties = (JObject)Assert.Single(ingestion.NextRequest().Logs)["context"]["properties"];
+            Assert.Equal(new[] { "user" }, properties.Properties().Select(property => property.Name));
+        }
+
+        [Fact]
+        public void SendsScopePropertiesWhenEnabled()
+        {
+            var logger = LoggerFor(TargetWithScopeProperties());
+
+            using (PushScopeProperty("requestId", "req-123")) {
+                logger.Info("User {user} signed in", "Josh");
+            }
+            logger.Info("Outside of the scope");
+
+            var logs = ingestion.NextRequest().Logs;
+            Assert.Equal("req-123", (string)logs[0]["context"]["properties"]["requestId"]);
+            Assert.Equal("Josh", (string)logs[0]["context"]["properties"]["user"]);
+            Assert.Equal("{}", logs[1]["context"]["properties"].ToString());
+        }
+
+        [Fact]
+        public void SendsScopePropertiesCapturedBeforeAsyncWrapper()
+        {
+            var config = new LoggingConfiguration(logFactory);
+            config.AddRuleForAllLevels(new AsyncTargetWrapper("async", TargetWithScopeProperties()));
+            logFactory.Configuration = config;
+
+            // The wrapper writes on its own thread, after the scope is gone from the logging thread
+            using (PushScopeProperty("requestId", "req-123")) {
+                logFactory.GetLogger("TestLogger").Info("Hello");
+            }
+
+            var log = Assert.Single(ingestion.NextRequest().Logs);
+            Assert.Equal("req-123", (string)log["context"]["properties"]["requestId"]);
+        }
+
+        [Fact]
+        public void SendsContextPropertiesConfiguredOnTarget()
+        {
+            var target = Target();
+            target.ContextProperties.Add(new TargetPropertyWithContext("service", "checkout"));
+            LoggerFor(target).Info("Order {orderId} placed", 75423);
+
+            var properties = Assert.Single(ingestion.NextRequest().Logs)["context"]["properties"];
+            Assert.Equal("checkout", (string)properties["service"]);
+            Assert.Equal(75423, (int)properties["orderId"]);
+        }
+
+        [Fact]
+        public void ConfiguresContextPropertiesFromXml()
+        {
+            var xml = $@"
+                <nlog>
+                    <extensions>
+                        <add assembly=""BetterStack.Logs.NLog"" />
+                    </extensions>
+                    <targets>
+                        <target type=""BetterStack.Logs"" name=""betterstack"" layout=""${{message}}""
+                            sourceToken=""xml-source-token"" endpoint=""{ingestion.Endpoint}"" flushPeriodMilliseconds=""10"">
+                            <contextproperty name=""service"" layout=""checkout"" />
+                        </target>
+                    </targets>
+                    <rules>
+                        <logger name=""*"" minlevel=""Trace"" writeTo=""betterstack"" />
+                    </rules>
+                </nlog>";
+            logFactory.Configuration = XmlLoggingConfiguration.CreateFromXmlString(xml, logFactory);
+
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var properties = Assert.Single(ingestion.NextRequest().Logs)["context"]["properties"];
+            Assert.Equal("checkout", (string)properties["service"]);
+        }
+
+        [Fact]
+        public void OmitsEventPropertiesWhenDisabled()
+        {
+            var target = Target();
+            target.IncludeEventProperties = false;
+            LoggerFor(target).Info("Order {orderId} placed", 75423);
+
+            var context = Assert.Single(ingestion.NextRequest().Logs)["context"];
+            Assert.Equal("{}", context["properties"].ToString());
+        }
+
+        private BetterStackLogsTarget TargetWithScopeProperties()
+        {
+            var target = Target();
+#if NLOG_4
+            target.IncludeMdlc = true;
+#else
+            target.IncludeScopeProperties = true;
+#endif
+            return target;
+        }
+
+        private static IDisposable PushScopeProperty(string name, string value)
+        {
+#if NLOG_4
+            return MappedDiagnosticsLogicalContext.SetScoped(name, value);
+#else
+            return ScopeContext.PushProperty(name, value);
+#endif
         }
 
         [Fact]

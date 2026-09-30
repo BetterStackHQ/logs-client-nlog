@@ -87,6 +87,7 @@ namespace BetterStack.Logs.NLog
         public BetterStackLogsTarget()
         {
             StackTraceUsage = StackTraceUsage.Max;
+            IncludeEventProperties = true;
         }
 
         /// <inheritdoc/>
@@ -124,7 +125,9 @@ namespace BetterStack.Logs.NLog
         {
             var contextDictionary = new Dictionary<string, object> {
                 ["logger"] = logEvent.LoggerName,
-                ["properties"] = logEvent.Properties,
+                // Event properties, plus whatever else the target is configured to include:
+                // scope properties (IncludeScopeProperties, or IncludeMdlc on NLog 4) and <contextproperty> items
+                ["properties"] = GetAllProperties(logEvent),
                 ["runtime"] = new Dictionary<string, object> {
                     ["class"] = logEvent.CallerClassName,
                     ["member"] = logEvent.CallerMemberName,
