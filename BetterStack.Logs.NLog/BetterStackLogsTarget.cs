@@ -42,6 +42,13 @@ namespace BetterStack.Logs.NLog
         public int Retries { get; set; } = 10;
 
         /// <summary>
+        /// The maximum time in milliseconds that closing the target, on shutdown or when the configuration is
+        /// reloaded, waits for queued logs to be sent. Logs not sent by then are lost when the application exits,
+        /// so an endpoint that cannot be reached does not hold the shutdown. 0 means no limit.
+        /// </summary>
+        public int MaxFlushTimeMilliseconds { get; set; } = 30000;
+
+        /// <summary>
         /// We capture the file and line of every log message by default. You can turn this
         /// option off if it has negative impact on the performance of your application.
         /// </summary>
@@ -93,7 +100,7 @@ namespace BetterStack.Logs.NLog
         /// <inheritdoc/>
         protected override void InitializeTarget()
         {
-            betterStackDrain?.Stop().Wait();
+            stopDrain();
 
             var sourceToken = RenderLogEvent(SourceToken, LogEventInfo.CreateNullEvent());
             var endpoint = RenderLogEvent(Endpoint, LogEventInfo.CreateNullEvent());
@@ -116,7 +123,7 @@ namespace BetterStack.Logs.NLog
         /// <inheritdoc/>
         protected override void CloseTarget()
         {
-            betterStackDrain?.Stop().Wait();
+            stopDrain();
             base.CloseTarget();
         }
 
@@ -161,6 +168,18 @@ namespace BetterStack.Logs.NLog
             };
 
             betterStackDrain.Enqueue(log);
+        }
+
+        private void stopDrain()
+        {
+            if (betterStackDrain == null) return;
+
+            var timeout = MaxFlushTimeMilliseconds > 0 ? MaxFlushTimeMilliseconds : System.Threading.Timeout.Infinite;
+            if (!betterStackDrain.Stop().Wait(timeout)) {
+                // The drain delivers on a thread-pool thread, which does not keep the process alive: what it has not
+                // sent yet is lost when the application exits, and still sent in the background after a reload
+                global::NLog.Common.InternalLogger.Warn("BetterStack.Logs: gave up waiting for queued logs to be sent after {0} ms (maxFlushTimeMilliseconds).", MaxFlushTimeMilliseconds);
+            }
         }
     }
 }
