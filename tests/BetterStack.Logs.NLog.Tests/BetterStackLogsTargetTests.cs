@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Newtonsoft.Json.Linq;
 using NLog;
+using NLog.Common;
 using NLog.Config;
 using NLog.Targets;
 using NLog.Targets.Wrappers;
@@ -13,12 +14,16 @@ namespace BetterStack.Logs.NLog.Tests
     {
         private readonly FakeIngestion ingestion = new FakeIngestion();
         private readonly LogFactory logFactory = new LogFactory();
+        private readonly System.IO.TextWriter originalInternalLogWriter = InternalLogger.LogWriter;
+        private readonly LogLevel originalInternalLogLevel = InternalLogger.LogLevel;
 
         public void Dispose()
         {
             logFactory.Shutdown();
             ingestion.Dispose();
             GlobalDiagnosticsContext.Clear();
+            InternalLogger.LogWriter = originalInternalLogWriter;
+            InternalLogger.LogLevel = originalInternalLogLevel;
         }
 
         private BetterStackLogsTarget Target() => new BetterStackLogsTarget {
@@ -329,6 +334,71 @@ namespace BetterStack.Logs.NLog.Tests
             var retried = ingestion.NextRequest();
             Assert.Equal("Hello", (string)Assert.Single(failed.Logs)["message"]);
             Assert.Equal(failed.Body, retried.Body);
+        }
+
+        [Fact]
+        public void DropsNewLogsOnceTheQueueIsFull()
+        {
+            var internalLog = new System.IO.StringWriter();
+            InternalLogger.LogLevel = LogLevel.Error;
+            InternalLogger.LogWriter = internalLog;
+            ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.MaxQueueSize = 5;
+            var logger = LoggerFor(target);
+
+            logger.Info("Stuck");
+            ingestion.NextRequest();
+            // Written while the failed batch waits a second for its retry
+            for (var i = 1; i <= 8; i++) logger.Info("Log " + i);
+
+            Assert.Equal("Stuck", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+            Assert.Equal(new[] { "Log 1", "Log 2", "Log 3", "Log 4", "Log 5" }, ingestion.NextRequest().Logs.Select(log => (string)log["message"]));
+            var error = Assert.Single(internalLog.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries));
+            Assert.EndsWith("Error BetterStack.Logs: maximum number of logs in the queue reached (5). New logs will be dropped.", error);
+        }
+
+        [Fact]
+        public void ReportsTheNextOverflowOnceTheQueueHasRoomAgain()
+        {
+            var internalLog = new System.IO.StringWriter();
+            InternalLogger.LogLevel = LogLevel.Error;
+            InternalLogger.LogWriter = internalLog;
+            var target = Target();
+            target.MaxQueueSize = 1;
+            var logger = LoggerFor(target);
+
+            for (var round = 1; round <= 2; round++) {
+                ingestion.StatusCodes.Enqueue(500);
+                logger.Info("Stuck");
+                ingestion.NextRequest();
+                // Written while the failed batch waits a second for its retry
+                logger.Info("Queued");
+                logger.Info("Dropped");
+                ingestion.NextRequest();
+                Assert.Equal("Queued", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+            }
+
+            var errors = internalLog.ToString().Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, errors.Length);
+            Assert.All(errors, error => Assert.EndsWith("Error BetterStack.Logs: maximum number of logs in the queue reached (1). New logs will be dropped.", error));
+        }
+
+        [Fact]
+        public void KeepsAtMost100000LogsInTheQueueByDefault()
+        {
+            Assert.Equal(100000, new BetterStackLogsTarget().MaxQueueSize);
+        }
+
+        [Fact]
+        public void ReportsMaxQueueSizeBelowOneAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.MaxQueueSize = 0;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: maxQueueSize is 0. Set it to 1 or more.", exception.Message);
         }
 
         [Fact]
