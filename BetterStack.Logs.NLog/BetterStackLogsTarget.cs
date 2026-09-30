@@ -91,6 +91,7 @@ namespace BetterStack.Logs.NLog
         private StackTraceUsage _stackTraceUsage;
 
         private Drain betterStackDrain = null;
+        private Client betterStackClient = null;
         // The last flush asked of the drain, and the time since which a flush has been waiting for it
         private Task pendingFlush;
         private Stopwatch pendingFlushTime;
@@ -123,6 +124,7 @@ namespace BetterStack.Logs.NLog
                 period: TimeSpan.FromMilliseconds(FlushPeriodMilliseconds),
                 maxBatchSize: MaxBatchSize
             );
+            betterStackClient = client;
 
             base.InitializeTarget();
         }
@@ -200,7 +202,16 @@ namespace BetterStack.Logs.NLog
             if (betterStackDrain == null) return;
 
             var timeout = remainingFlushTime();
-            if (!betterStackDrain.Stop().Wait(timeout)) {
+            var stopped = betterStackDrain.Stop();
+
+            // Disposed once the drain has stopped, also when that is after the wait below: a drain still retrying in
+            // the background needs its client until then. The reference is cleared because a closed target that is
+            // initialized again stops the same drain once more.
+            var client = betterStackClient;
+            betterStackClient = null;
+            if (client != null) stopped.ContinueWith(_ => client.Dispose());
+
+            if (!stopped.Wait(timeout)) {
                 // The drain delivers on a thread-pool thread, which does not keep the process alive: what it has not
                 // sent yet is lost when the application exits, and still sent in the background after a reload
                 global::NLog.Common.InternalLogger.Warn("BetterStack.Logs: gave up waiting for queued logs to be sent after {0} ms (maxFlushTimeMilliseconds).", MaxFlushTimeMilliseconds);
