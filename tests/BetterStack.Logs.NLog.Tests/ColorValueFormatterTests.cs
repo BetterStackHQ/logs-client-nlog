@@ -31,7 +31,8 @@ namespace BetterStack.Logs.NLog.Tests
         [Fact]
         public void ColorsStringsCyan()
         {
-            Assert.Equal("\x1b[36;1m\"Josh\"\x1b[0m", Format("Josh"));
+            // NLog 6 stopped quoting strings
+            Assert.Contains(Format("Josh"), new[] { "\x1b[36;1m\"Josh\"\x1b[0m", "\x1b[36;1mJosh\x1b[0m" });
         }
 
         [Fact]
