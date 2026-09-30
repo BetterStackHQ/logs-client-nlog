@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -52,17 +53,32 @@ namespace BetterStack.Logs
         /// </summary>
         public async Task Send(IEnumerable<Log> logs)
         {
+            var count = logs.Count();
             var payload = serialize(logs);
 
             for (int i = 0; i < retries; ++i) {
                 await Task.Delay(TimeSpan.FromSeconds(i));
 
-                var success = await sendOnce(payload);
-                if (success) break;
+                var statusCode = await sendOnce(payload);
+                if (statusCode >= 200 && statusCode <= 299) return;
+
+                // Worth another attempt: no response at all, a request timeout, rate limiting or a server error
+                if (statusCode == null || statusCode == 408 || statusCode == 429 || statusCode >= 500) continue;
+
+                // Any other status is the final answer to this request: sending it again would get
+                // the same one and only hold up the logs queued behind it.
+                var hint = statusCode == 401 || statusCode == 403 ? " Check the source token and the endpoint." : "";
+                global::NLog.Common.InternalLogger.Error("BetterStack.Logs: dropped {0} logs, the request was rejected with status {1}.{2}", count, statusCode.Value, hint);
+                return;
             }
+
+            global::NLog.Common.InternalLogger.Error("BetterStack.Logs: dropped {0} logs after {1} failed attempts.", count, retries);
         }
 
-        private async Task<bool> sendOnce(byte[] payload)
+        /// <summary>
+        /// Returns the status code of the response, or null when there was none.
+        /// </summary>
+        private async Task<int?> sendOnce(byte[] payload)
         {
             try {
                 // Every attempt needs its own HttpContent. On .NET Framework, HttpClient disposes
@@ -71,13 +87,15 @@ namespace BetterStack.Logs
                 // after the first throw ObjectDisposedException instead of reaching the server.
                 using (var content = buildContent(payload))
                 using (var response = await httpClient.PostAsync("/", content)) {
-                    return response.IsSuccessStatusCode;
+                    if (!response.IsSuccessStatusCode) {
+                        global::NLog.Common.InternalLogger.Warn("BetterStack.Logs: request failed with status {0} {1}.", (int)response.StatusCode, response.ReasonPhrase);
+                    }
+                    return (int)response.StatusCode;
                 }
             } catch (TaskCanceledException ex) {
                 // request timed out
                 global::NLog.Common.InternalLogger.Warn(ex, "BetterStack.Logs: request timed out.");
             } catch (HttpRequestException ex) {
-                // TODO: repeat only for certain HTTP errors (429, 5xx)
                 // some networking error
                 global::NLog.Common.InternalLogger.Warn(ex, "BetterStack.Logs: request failed.");
             } catch (Exception ex) {
@@ -86,7 +104,7 @@ namespace BetterStack.Logs
                 global::NLog.Common.InternalLogger.Error(ex, "BetterStack.Logs: unexpected error while sending logs.");
             }
 
-            return false;
+            return null;
         }
 
         private byte[] serialize(IEnumerable<Log> logs) {
