@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
+using System.Threading;
 using Newtonsoft.Json.Linq;
 using NLog;
+using NLog.Common;
 using NLog.Config;
 using NLog.Targets;
 using NLog.Targets.Wrappers;
@@ -13,12 +15,16 @@ namespace BetterStack.Logs.NLog.Tests
     {
         private readonly FakeIngestion ingestion = new FakeIngestion();
         private readonly LogFactory logFactory = new LogFactory();
+        private readonly System.IO.TextWriter originalInternalLogWriter = InternalLogger.LogWriter;
+        private readonly LogLevel originalInternalLogLevel = InternalLogger.LogLevel;
 
         public void Dispose()
         {
             logFactory.Shutdown();
             ingestion.Dispose();
             GlobalDiagnosticsContext.Clear();
+            InternalLogger.LogWriter = originalInternalLogWriter;
+            InternalLogger.LogLevel = originalInternalLogLevel;
         }
 
         private BetterStackLogsTarget Target() => new BetterStackLogsTarget {
@@ -584,6 +590,68 @@ namespace BetterStack.Logs.NLog.Tests
 
             logger.Info("Delivered");
             Assert.Equal("Delivered", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+        }
+
+        [Fact]
+        public void LogsTheBatchDroppedAfterRetries()
+        {
+            var internalLog = CaptureInternalLog();
+            ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.Retries = 1;
+            var logger = LoggerFor(target);
+
+            logger.Info("Dropped");
+            ingestion.NextRequest();
+            // The next batch goes out after the dropped one has been logged
+            logger.Info("Delivered");
+            ingestion.NextRequest();
+
+            Assert.Contains("BetterStack.Logs: request failed with status 500 Internal Server Error.", internalLog.ToString());
+            Assert.Contains("BetterStack.Logs: dropped 1 logs after 1 failed attempts.", internalLog.ToString());
+        }
+
+        [Fact]
+        public void DoesNotRetryTheBatchRejectedAsUnauthorized()
+        {
+            var internalLog = CaptureInternalLog();
+            ingestion.StatusCodes.Enqueue(401);
+            var logger = LoggerFor(Target());
+
+            logger.Info("Rejected");
+            Assert.Equal("Rejected", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            // A retry would come after a second
+            Thread.Sleep(2500);
+            Assert.False(ingestion.HasRequest, "The rejected batch was sent again.");
+
+            logger.Info("Delivered");
+            Assert.Equal("Delivered", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            Assert.Contains("BetterStack.Logs: request failed with status 401 Unauthorized.", internalLog.ToString());
+            Assert.Contains("BetterStack.Logs: dropped 1 logs, the request was rejected with status 401. Check the source token and the endpoint.", internalLog.ToString());
+        }
+
+        [Theory]
+        [InlineData(408)]
+        [InlineData(429)]
+        public void RetriesTheBatchAfterRequestTimeoutOrRateLimit(int statusCode)
+        {
+            ingestion.StatusCodes.Enqueue(statusCode);
+            LoggerFor(Target()).Info("Hello");
+
+            var failed = ingestion.NextRequest();
+            var retried = ingestion.NextRequest();
+            Assert.Equal("Hello", (string)Assert.Single(failed.Logs)["message"]);
+            Assert.Equal(failed.Body, retried.Body);
+        }
+
+        private System.IO.StringWriter CaptureInternalLog()
+        {
+            var internalLog = new System.IO.StringWriter();
+            InternalLogger.LogLevel = LogLevel.Warn;
+            InternalLogger.LogWriter = internalLog;
+            return internalLog;
         }
 
         [Fact]
