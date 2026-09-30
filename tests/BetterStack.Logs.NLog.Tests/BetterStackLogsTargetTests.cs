@@ -98,6 +98,21 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void SendsLogWhoseExceptionCannotBeRendered()
+        {
+            LoggerFor(Target()).Error(new NastyException(), "Order {orderId} failed", 75423);
+
+            var log = Assert.Single(ingestion.NextRequest().Logs);
+            Assert.Equal("Order 75423 failed", (string)log["message"]);
+            Assert.Equal("BetterStack.Logs.NLog.Tests.BetterStackLogsTargetTests+NastyException (its ToString() threw System.InvalidOperationException)", (string)log["exception"]);
+        }
+
+        private sealed class NastyException : Exception
+        {
+            public override string Message => throw new InvalidOperationException("The message is gone");
+        }
+
+        [Fact]
         public void SendsStructuredProperties()
         {
             LoggerFor(Target()).Info("User {user} - {userID} just ordered item {item}", "Josh", 95845, 75423);
