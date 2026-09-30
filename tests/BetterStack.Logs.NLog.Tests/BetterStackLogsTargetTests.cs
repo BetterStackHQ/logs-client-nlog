@@ -936,5 +936,38 @@ namespace BetterStack.Logs.NLog.Tests
 
             Assert.Null(Record.Exception(() => LoggerFor(target)));
         }
+
+        [Fact]
+        public void DisposedClientSendsNothing()
+        {
+            var client = new Client("test-source-token", ingestion.Endpoint, retries: 1);
+            client.Dispose();
+
+            client.Send(new[] { new Log { Message = "After dispose" } }).Wait();
+
+            Assert.False(ingestion.HasRequest, "The disposed client still sent the log.");
+        }
+
+        [Fact]
+        public void DisposesTheClientWhenTheTargetIsReloadedOrClosed()
+        {
+            using (var server = new KeepAliveServer()) {
+                var first = Target();
+                first.Endpoint = server.Endpoint;
+                LoggerFor(first).Info("Before the reload");
+                var firstConnection = server.AnswerRequest();
+
+                var second = Target();
+                second.Endpoint = server.Endpoint;
+                LoggerFor(second).Info("After the reload");
+                var secondConnection = server.AnswerRequest();
+
+                logFactory.Shutdown();
+
+                // A client keeps its connection open until it is disposed
+                Assert.Equal(-1, firstConnection.ReadByte());
+                Assert.Equal(-1, secondConnection.ReadByte());
+            }
+        }
     }
 }

@@ -12,7 +12,7 @@ namespace BetterStack.Logs
     /// <summary>
     /// The Client class is responsible for reliable delivery of logs to the Better Stack servers.
     /// </summary>
-    public sealed class Client
+    public sealed class Client : IDisposable
     {
         private readonly HttpClient httpClient;
         private readonly JsonSerializerSettings settings = new JsonSerializerSettings {
@@ -58,6 +58,14 @@ namespace BetterStack.Logs
             httpClient.DefaultRequestHeaders.ExpectContinue = false;
 
             this.retries = retries;
+        }
+
+        /// <summary>
+        /// Releases the HTTP client and its connections. Nothing can be sent afterwards.
+        /// </summary>
+        public void Dispose()
+        {
+            httpClient.Dispose();
         }
 
         /// <summary>
