@@ -56,6 +56,15 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void DoesNotAskForContinueBeforeSendingLogs()
+        {
+            LoggerFor(Target()).Info("Hello");
+
+            // With "Expect: 100-continue", the client holds the body back until the server answers or 350 ms pass
+            Assert.Null(ingestion.NextRequest().Expect);
+        }
+
+        [Fact]
         public void SendsTimestampOfTheLogEvent()
         {
             var logEvent = new LogEventInfo(LogLevel.Info, "TestLogger", "Hello") {
