@@ -9,8 +9,9 @@
     <PackageIcon>icon.png</PackageIcon>
     <PackageProjectUrl>https://logs.betterstack.com</PackageProjectUrl>
     <RepositoryUrl>https://github.com/BetterStackHQ/logs-client-nlog</RepositoryUrl>
-    <RespositoryType>git</RespositoryType>
-    <Tags>betterstack logging livetail nlog</Tags>
+    <RepositoryType>git</RepositoryType>
+    <Description>NLog target for sending logs to Better Stack.</Description>
+    <PackageTags>betterstack logging livetail nlog</PackageTags>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
 
@@ -31,9 +32,6 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitLab" Version="1.1.1" PrivateAssets="All"/>
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
