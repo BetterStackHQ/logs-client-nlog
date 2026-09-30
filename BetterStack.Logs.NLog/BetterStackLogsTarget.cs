@@ -152,11 +152,19 @@ namespace BetterStack.Logs.NLog
             }
             string logMessage = RenderLogEvent(this.Layout, logEvent);
 
+            string exception;
+            try {
+                exception = logEvent.Exception?.ToString();
+            } catch (Exception ex) {
+                // An exception whose Message or ToString() throws must not cost the log itself
+                exception = $"{logEvent.Exception.GetType()} (its ToString() threw {ex.GetType()})";
+            }
+
             var log = new Log {
                 Timestamp = new DateTimeOffset(logEvent.TimeStamp),
                 Message = logMessage,
                 Level = logEvent.Level.Name,
-                Exception = logEvent.Exception?.ToString(),
+                Exception = exception,
                 Context = contextDictionary
             };
 
