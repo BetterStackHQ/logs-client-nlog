@@ -235,6 +235,81 @@ namespace BetterStack.Logs.NLog.Tests
             Assert.Equal(JTokenType.Null, runtime["line"].Type);
         }
 
+        [Theory]
+        [InlineData("Max")]
+        [InlineData("WithSource")]
+#if !NLOG_4
+        [InlineData("WithFileNameAndLineNumber")]
+#endif
+        public void SendsSourceLocationWhenStackTraceUsageAsksForSource(string stackTraceUsage)
+        {
+            var target = TargetFromXmlWithStackTraceUsage(stackTraceUsage);
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var runtime = Assert.Single(ingestion.NextRequest().Logs)["context"]["runtime"];
+            Assert.Equal("BetterStack.Logs.NLog.Tests.BetterStackLogsTargetTests", (string)runtime["class"]);
+            Assert.Equal("SendsSourceLocationWhenStackTraceUsageAsksForSource", (string)runtime["member"]);
+            Assert.EndsWith("BetterStackLogsTargetTests.cs", (string)runtime["file"]);
+            Assert.Equal(JTokenType.Integer, runtime["line"].Type);
+            Assert.True(target.CaptureSourceLocation);
+        }
+
+        [Theory]
+        [InlineData("WithoutSource")]
+#if !NLOG_4
+        [InlineData("WithCallSite")]
+        [InlineData("WithCallSiteClassName")]
+#endif
+        public void SendsClassAndMemberOnlyWhenStackTraceUsageAsksForNoSource(string stackTraceUsage)
+        {
+            var target = TargetFromXmlWithStackTraceUsage(stackTraceUsage);
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var runtime = Assert.Single(ingestion.NextRequest().Logs)["context"]["runtime"];
+            Assert.Equal("BetterStack.Logs.NLog.Tests.BetterStackLogsTargetTests", (string)runtime["class"]);
+            Assert.Equal("SendsClassAndMemberOnlyWhenStackTraceUsageAsksForNoSource", (string)runtime["member"]);
+            Assert.Equal(JTokenType.Null, runtime["file"].Type);
+            Assert.Equal(JTokenType.Null, runtime["line"].Type);
+            Assert.False(target.CaptureSourceLocation);
+        }
+
+        [Fact]
+        public void OmitsSourceLocationWhenStackTraceUsageIsNone()
+        {
+            var target = TargetFromXmlWithStackTraceUsage("None");
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var runtime = Assert.Single(ingestion.NextRequest().Logs)["context"]["runtime"];
+            Assert.Equal(JTokenType.Null, runtime["class"].Type);
+            Assert.Equal(JTokenType.Null, runtime["member"].Type);
+            Assert.Equal(JTokenType.Null, runtime["file"].Type);
+            Assert.Equal(JTokenType.Null, runtime["line"].Type);
+            Assert.False(target.CaptureSourceLocation);
+        }
+
+        // The values of StackTraceUsage differ between NLog 4.7, which the library is compiled against, and NLog 5 and
+        // later: set in XML, the value is parsed by the NLog loaded at run time
+        private BetterStackLogsTarget TargetFromXmlWithStackTraceUsage(string stackTraceUsage)
+        {
+            var xml = $@"
+                <nlog>
+                    <extensions>
+                        <add assembly=""BetterStack.Logs.NLog"" />
+                    </extensions>
+                    <targets>
+                        <target type=""BetterStack.Logs"" name=""betterstack"" layout=""${{message}}""
+                            sourceToken=""xml-source-token"" endpoint=""{ingestion.Endpoint}"" flushPeriodMilliseconds=""10""
+                            stackTraceUsage=""{stackTraceUsage}"" />
+                    </targets>
+                    <rules>
+                        <logger name=""*"" minlevel=""Trace"" writeTo=""betterstack"" />
+                    </rules>
+                </nlog>";
+            logFactory.Configuration = XmlLoggingConfiguration.CreateFromXmlString(xml, logFactory);
+
+            return logFactory.Configuration.FindTargetByName<BetterStackLogsTarget>("betterstack");
+        }
+
         [Fact]
         public void SendsGlobalDiagnosticsContextByDefault()
         {

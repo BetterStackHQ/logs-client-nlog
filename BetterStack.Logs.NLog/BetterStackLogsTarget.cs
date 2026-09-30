@@ -48,7 +48,7 @@ namespace BetterStack.Logs.NLog
         /// </summary>
         public bool CaptureSourceLocation
         {
-            get => StackTraceUsage == StackTraceUsage.Max;
+            get => (StackTraceUsage & StackTraceUsage.WithSource) != 0;
             set => StackTraceUsage = value ? StackTraceUsage.Max : StackTraceUsage.None;
         }
 
@@ -73,7 +73,11 @@ namespace BetterStack.Logs.NLog
                 else
                 {
                     IncludeCallSite = true;
-                    IncludeCallSiteStackTrace = value == StackTraceUsage.Max;
+                    // This library is compiled against NLog 4.7, where WithSource and Max are 2. NLog 5 made the enum
+                    // flags with other values, and a value from the configuration comes from the NLog loaded at run
+                    // time: there 2 is WithFileNameAndLineNumber, part of its WithSource and Max (3), while its
+                    // WithoutSource is 1 like in NLog 4.7. The bit 2 asks for the file and line on every version.
+                    IncludeCallSiteStackTrace = (value & StackTraceUsage.WithSource) != 0;
                 }
                 _stackTraceUsage = value;
             }
