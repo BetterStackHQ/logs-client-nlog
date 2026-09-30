@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using NLog;
 using NLog.Common;
 using NLog.Config;
@@ -43,9 +45,10 @@ namespace BetterStack.Logs.NLog
         public int Retries { get; set; } = 10;
 
         /// <summary>
-        /// The maximum time in milliseconds that closing the target, on shutdown or when the configuration is
-        /// reloaded, waits for queued logs to be sent. Logs not sent by then are lost when the application exits,
-        /// so an endpoint that cannot be reached does not hold the shutdown. 0 means no limit.
+        /// The maximum time in milliseconds that flushing or closing the target, on shutdown or when the configuration
+        /// is reloaded, waits for queued logs to be sent. A flush followed by a close, as on shutdown, shares this time.
+        /// Logs not sent by then are lost when the application exits, so an endpoint that cannot be reached does not
+        /// hold the shutdown. 0 means no limit.
         /// </summary>
         public int MaxFlushTimeMilliseconds { get; set; } = 30000;
 
@@ -88,6 +91,9 @@ namespace BetterStack.Logs.NLog
         private StackTraceUsage _stackTraceUsage;
 
         private Drain betterStackDrain = null;
+        // The last flush asked of the drain, and the time since which a flush has been waiting for it
+        private Task pendingFlush;
+        private Stopwatch pendingFlushTime;
 
         /// <summary>
         /// Initializes a new instance of the BetterStack.Logs.NLog.BetterStackLogsTarget class.
@@ -131,7 +137,19 @@ namespace BetterStack.Logs.NLog
         /// <inheritdoc/>
         protected override void FlushAsync(AsyncContinuation asyncContinuation)
         {
-            betterStackDrain.Flush().ContinueWith(task => asyncContinuation(task.Exception));
+            var flush = betterStackDrain.Flush();
+            lock (SyncRoot) {
+                if (pendingFlush == null || pendingFlush.IsCompleted) pendingFlushTime = Stopwatch.StartNew();
+                pendingFlush = flush;
+            }
+
+            var timeout = MaxFlushTimeMilliseconds > 0 ? MaxFlushTimeMilliseconds : System.Threading.Timeout.Infinite;
+            Task.WhenAny(flush, Task.Delay(timeout)).ContinueWith(first => {
+                if (first.Result != flush) {
+                    global::NLog.Common.InternalLogger.Warn("BetterStack.Logs: gave up waiting for queued logs to be sent on flush after {0} ms (maxFlushTimeMilliseconds).", MaxFlushTimeMilliseconds);
+                }
+                asyncContinuation(flush.Exception);
+            });
         }
 
         /// <inheritdoc/>
@@ -181,11 +199,25 @@ namespace BetterStack.Logs.NLog
         {
             if (betterStackDrain == null) return;
 
-            var timeout = MaxFlushTimeMilliseconds > 0 ? MaxFlushTimeMilliseconds : System.Threading.Timeout.Infinite;
+            var timeout = remainingFlushTime();
             if (!betterStackDrain.Stop().Wait(timeout)) {
                 // The drain delivers on a thread-pool thread, which does not keep the process alive: what it has not
                 // sent yet is lost when the application exits, and still sent in the background after a reload
                 global::NLog.Common.InternalLogger.Warn("BetterStack.Logs: gave up waiting for queued logs to be sent after {0} ms (maxFlushTimeMilliseconds).", MaxFlushTimeMilliseconds);
+            }
+            lock (SyncRoot) pendingFlush = null;
+        }
+
+        // How long closing may still wait for delivery. Waiting on a flush the drain has not delivered yet counts
+        // against it, so that LogFactory.Shutdown(), which flushes and then closes, waits MaxFlushTimeMilliseconds
+        // in total.
+        private int remainingFlushTime()
+        {
+            if (MaxFlushTimeMilliseconds <= 0) return System.Threading.Timeout.Infinite;
+
+            lock (SyncRoot) {
+                if (pendingFlush == null || pendingFlush.IsCompleted) return MaxFlushTimeMilliseconds;
+                return (int)Math.Max(0, MaxFlushTimeMilliseconds - pendingFlushTime.ElapsedMilliseconds);
             }
         }
     }
