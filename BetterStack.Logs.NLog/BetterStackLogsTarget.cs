@@ -113,6 +113,16 @@ namespace BetterStack.Logs.NLog
             if (!Uri.TryCreate(endpointUrl, UriKind.Absolute, out _)) {
                 throw new NLogConfigurationException($"BetterStack.Logs: endpoint is \"{endpoint}\". Set it to the ingesting host of your Better Stack source.");
             }
+            // 0 would leave the drain spinning on a core: without taking any logs, or without waiting between flushes
+            if (MaxBatchSize < 1) {
+                throw new NLogConfigurationException($"BetterStack.Logs: maxBatchSize is {MaxBatchSize}. Set it to 1 or more.");
+            }
+            if (FlushPeriodMilliseconds < 1) {
+                throw new NLogConfigurationException($"BetterStack.Logs: flushPeriodMilliseconds is {FlushPeriodMilliseconds}. Set it to 1 or more.");
+            }
+            if (Retries < 0) {
+                throw new NLogConfigurationException($"BetterStack.Logs: retries is {Retries}. Set it to 0 or more.");
+            }
 
             var client = new Client(
                 sourceToken,
