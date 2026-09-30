@@ -13,6 +13,9 @@ namespace BetterStack.Logs
 
         public string Level { get; set; }
 
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string Exception { get; set; }
+
         public Dictionary<string, object> Context { get; set; }
 
         public Log() {

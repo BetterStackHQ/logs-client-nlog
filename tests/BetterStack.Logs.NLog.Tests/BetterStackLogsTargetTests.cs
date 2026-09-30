@@ -79,6 +79,25 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void SendsExceptionOfTheLogEvent()
+        {
+            LoggerFor(Target()).Error(new InvalidOperationException("Payment gateway timed out"), "Order {orderId} failed", 75423);
+
+            var log = Assert.Single(ingestion.NextRequest().Logs);
+            Assert.Equal("Order 75423 failed", (string)log["message"]);
+            Assert.Equal("System.InvalidOperationException: Payment gateway timed out", (string)log["exception"]);
+        }
+
+        [Fact]
+        public void OmitsExceptionWhenThereIsNone()
+        {
+            LoggerFor(Target()).Error("Order {orderId} failed", 75423);
+
+            var log = (JObject)Assert.Single(ingestion.NextRequest().Logs);
+            Assert.False(log.ContainsKey("exception"));
+        }
+
+        [Fact]
         public void SendsStructuredProperties()
         {
             LoggerFor(Target()).Info("User {user} - {userID} just ordered item {item}", "Josh", 95845, 75423);

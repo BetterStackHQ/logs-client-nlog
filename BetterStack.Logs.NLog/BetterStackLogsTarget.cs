@@ -156,6 +156,7 @@ namespace BetterStack.Logs.NLog
                 Timestamp = new DateTimeOffset(logEvent.TimeStamp),
                 Message = logMessage,
                 Level = logEvent.Level.Name,
+                Exception = logEvent.Exception?.ToString(),
                 Context = contextDictionary
             };
 
