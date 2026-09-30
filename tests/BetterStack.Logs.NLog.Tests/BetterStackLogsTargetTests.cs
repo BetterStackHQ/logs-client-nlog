@@ -56,6 +56,15 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void DoesNotAskForContinueBeforeSendingLogs()
+        {
+            LoggerFor(Target()).Info("Hello");
+
+            // With "Expect: 100-continue", the client holds the body back until the server answers or 350 ms pass
+            Assert.Null(ingestion.NextRequest().Expect);
+        }
+
+        [Fact]
         public void SendsTimestampOfTheLogEvent()
         {
             var logEvent = new LogEventInfo(LogLevel.Info, "TestLogger", "Hello") {
@@ -260,7 +269,9 @@ namespace BetterStack.Logs.NLog.Tests
         [Fact]
         public void SendsScopePropertiesWhenEnabled()
         {
-            var logger = LoggerFor(TargetWithScopeProperties());
+            var target = TargetWithScopeProperties();
+            target.FlushPeriodMilliseconds = 500; // both logs have to end up in the same request
+            var logger = LoggerFor(target);
 
             using (PushScopeProperty("requestId", "req-123")) {
                 logger.Info("User {user} signed in", "Josh");
@@ -372,6 +383,26 @@ namespace BetterStack.Logs.NLog.Tests
             Assert.Equal(new[] { "Log 1", "Log 2" }, batches[0]);
             Assert.Equal(new[] { "Log 3", "Log 4" }, batches[1]);
             Assert.Equal(new[] { "Log 5" }, batches[2]);
+        }
+
+        [Fact]
+        public void DeliversPendingLogsOnFlush()
+        {
+            var target = Target();
+            target.FlushPeriodMilliseconds = 60000;
+            var logger = LoggerFor(target);
+
+            logger.Info("Before the first flush");
+            logFactory.Flush(TimeSpan.FromSeconds(10));
+
+            Assert.True(ingestion.HasRequest, "Flush returned before the pending log was delivered.");
+            Assert.Equal("Before the first flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            logger.Info("Before the second flush");
+            logFactory.Flush(TimeSpan.FromSeconds(10));
+
+            Assert.True(ingestion.HasRequest, "The second flush returned before the pending log was delivered.");
+            Assert.Equal("Before the second flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
         }
 
         [Fact]
