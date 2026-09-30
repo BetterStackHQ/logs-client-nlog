@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Newtonsoft.Json.Linq;
@@ -628,6 +629,102 @@ namespace BetterStack.Logs.NLog.Tests
 
             Assert.True(ingestion.HasRequest, "Shutdown returned before the pending log was delivered.");
             Assert.Equal("Last words", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+        }
+
+        [Fact]
+        public void StopsWaitingForDeliveryOnShutdownAfterMaxFlushTime()
+        {
+            for (var i = 0; i < 20; i++) ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.MaxFlushTimeMilliseconds = 500;
+            LoggerFor(target).Info("Never delivered");
+
+            var stopwatch = Stopwatch.StartNew();
+            logFactory.Shutdown();
+
+            // Without the limit, the ten attempts with their back-off hold the shutdown for 45 seconds. With it, the
+            // flush that Shutdown() starts with and the close that follows share the 500 ms.
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"Shutdown took {stopwatch.Elapsed}.");
+        }
+
+        [Fact]
+        public void StopsWaitingForDeliveryOnFlushAfterMaxFlushTime()
+        {
+            for (var i = 0; i < 20; i++) ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.FlushPeriodMilliseconds = 60000;
+            target.MaxFlushTimeMilliseconds = 500;
+            LoggerFor(target).Info("Never delivered");
+
+            var stopwatch = Stopwatch.StartNew();
+            logFactory.Flush(TimeSpan.FromSeconds(20));
+
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"Flush took {stopwatch.Elapsed}.");
+        }
+
+        [Fact]
+        public void WaitsTheFullMaxFlushTimeOnCloseAfterDeliveredFlush()
+        {
+            var target = Target();
+            target.FlushPeriodMilliseconds = 60000;
+            target.MaxFlushTimeMilliseconds = 1500;
+            var logger = LoggerFor(target);
+
+            logger.Info("Delivered on flush");
+            logFactory.Flush(TimeSpan.FromSeconds(20));
+            Assert.Equal("Delivered on flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            // Longer ago than the limit, so the delivered flush would use it all up if it still counted
+            System.Threading.Thread.Sleep(1500);
+            for (var i = 0; i < 20; i++) ingestion.StatusCodes.Enqueue(500);
+            logger.Info("Never delivered");
+
+            // Closes the target without the flush that Shutdown() starts with, which would wait the full limit anyway
+            var stopwatch = Stopwatch.StartNew();
+            target.Dispose();
+
+            Assert.True(stopwatch.Elapsed > TimeSpan.FromSeconds(1), $"Closing took {stopwatch.Elapsed}.");
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(8), $"Closing took {stopwatch.Elapsed}.");
+        }
+
+        [Fact]
+        public void WaitsForDeliveryOnShutdownWithoutLimitWhenMaxFlushTimeIsZero()
+        {
+            ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.FlushPeriodMilliseconds = 60000;
+            target.MaxFlushTimeMilliseconds = 0;
+            target.Retries = 3;
+            LoggerFor(target).Info("Last words");
+
+            logFactory.Shutdown();
+
+            Assert.Equal("Last words", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+            Assert.True(ingestion.HasRequest, "Shutdown returned before the retried log was delivered.");
+            Assert.Equal("Last words", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+        }
+
+        [Fact]
+        public void ConfiguresMaxFlushTimeFromXml()
+        {
+            Assert.Equal(30000, new BetterStackLogsTarget().MaxFlushTimeMilliseconds);
+
+            var xml = $@"
+                <nlog>
+                    <extensions>
+                        <add assembly=""BetterStack.Logs.NLog"" />
+                    </extensions>
+                    <targets>
+                        <target type=""BetterStack.Logs"" name=""betterstack"" layout=""${{message}}""
+                            sourceToken=""xml-source-token"" endpoint=""{ingestion.Endpoint}"" maxFlushTimeMilliseconds=""5000"" />
+                    </targets>
+                    <rules>
+                        <logger name=""*"" minlevel=""Trace"" writeTo=""betterstack"" />
+                    </rules>
+                </nlog>";
+            logFactory.Configuration = XmlLoggingConfiguration.CreateFromXmlString(xml, logFactory);
+
+            Assert.Equal(5000, logFactory.Configuration.FindTargetByName<BetterStackLogsTarget>("betterstack").MaxFlushTimeMilliseconds);
         }
 
         [Fact]

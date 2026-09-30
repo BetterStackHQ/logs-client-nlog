@@ -263,8 +263,11 @@ You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMillisec
    endpoint="https://<ingesting_host>"
    maxBatchSize="200"
    flushPeriodMilliseconds="1000"
-   retries="3" />
+   retries="3"
+   maxFlushTimeMilliseconds="10000" />
 ```
+
+When the application shuts down, the target waits at most `maxFlushTimeMilliseconds` (30 seconds by default) for the queued logs to be sent, so an endpoint that cannot be reached does not hold the shutdown. Logs that could not be sent by then are dropped. `LogManager.Flush()` does not wait longer than that either. Set it to `0` to wait until every log has been sent or has run out of retries.
 
 ## Structuring the logs
 
