@@ -18,11 +18,11 @@ namespace BetterStack.Logs.NLog
         /// Gets or sets the Better Stack Logs source token.
         /// </summary>
         /// <value>The source token.</value>
-        [RequiredParameter]
         public Layout SourceToken { get; set; }
 
         /// <summary>
-        /// The Better Stack Logs endpoint.
+        /// The Better Stack Logs endpoint: the ingesting host of your source. https:// is added when it has no
+        /// http:// or https:// scheme.
         /// </summary>
         public Layout Endpoint { get; set; } = "https://in.logs.betterstack.com";
 
@@ -97,6 +97,17 @@ namespace BetterStack.Logs.NLog
 
             var sourceToken = RenderLogEvent(SourceToken, LogEventInfo.CreateNullEvent());
             var endpoint = RenderLogEvent(Endpoint, LogEventInfo.CreateNullEvent());
+
+            if (string.IsNullOrWhiteSpace(sourceToken)) {
+                throw new NLogConfigurationException("BetterStack.Logs: sourceToken is not set. Set it to the source token of your Better Stack source.");
+            }
+            if (string.IsNullOrWhiteSpace(endpoint)) {
+                throw new NLogConfigurationException("BetterStack.Logs: endpoint is empty. Set it to the ingesting host of your Better Stack source.");
+            }
+            // The source settings show the ingesting host without a scheme
+            if (!endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) {
+                endpoint = "https://" + endpoint;
+            }
 
             var client = new Client(
                 sourceToken,

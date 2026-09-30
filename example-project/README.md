@@ -58,7 +58,7 @@ This file is used to configure NLog using XML syntax. The content of the file sh
 
 	<targets>
     <!-- Dont forget to change <source_token> and <ingesting_host> to your actual source token and ingesting host-->
-		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="<ingesting_host>" />
+		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="https://<ingesting_host>" />
 	</targets>
 
 	<rules>
@@ -226,7 +226,7 @@ You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMillisec
    name="mybetterstack"
    layout="${message}"
    sourceToken="<source_token>"
-   endpoint="<ingesting_host>"
+   endpoint="https://<ingesting_host>"
    maxBatchSize="200"
    flushPeriodMilliseconds="1000"
    retries="3" />
@@ -276,7 +276,7 @@ Properties pushed to NLog's `ScopeContext` are sent with every log written insid
    name="mybetterstack"
    layout="${message}"
    sourceToken="<source_token>"
-   endpoint="<ingesting_host>"
+   endpoint="https://<ingesting_host>"
    includeScopeProperties="true" />
 ```
 
@@ -292,7 +292,7 @@ Both `requestId` and `user` end up in `context.properties`. On NLog 4, which has
 To attach a fixed property to every log, add a `<contextproperty>` to the target:
 
 ```xml
-<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="<ingesting_host>">
+<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="https://<ingesting_host>">
    <contextproperty name="service" layout="checkout" />
 </target>
 ```
