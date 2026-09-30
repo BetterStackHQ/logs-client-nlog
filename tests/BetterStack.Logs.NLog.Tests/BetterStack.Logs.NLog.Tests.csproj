@@ -11,6 +11,8 @@
       Override with: dotnet test -p:NLogVersion=5.*
     -->
     <NLogVersion Condition="'$(NLogVersion)' == ''">4.7.11</NLogVersion>
+    <!-- NLog 5 replaced the mapped diagnostics contexts of NLog 4 with ScopeContext -->
+    <DefineConstants Condition="$(NLogVersion.StartsWith('4.'))">$(DefineConstants);NLOG_4</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

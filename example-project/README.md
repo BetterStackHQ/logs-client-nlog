@@ -265,3 +265,34 @@ Code above will create the following output:
 ```
 
 A new field called `properties` is added into the `context` and it contains the arguments that were passed and their values.
+
+## Adding context to all logs
+
+Properties pushed to NLog's `ScopeContext` are sent with every log written inside the scope, once you turn them on with `includeScopeProperties="true"`:
+
+```xml
+<target
+   xsi:type="BetterStack.Logs"
+   name="mybetterstack"
+   layout="${message}"
+   sourceToken="<source_token>"
+   endpoint="<ingesting_host>"
+   includeScopeProperties="true" />
+```
+
+```csharp
+using (ScopeContext.PushProperty("requestId", "0HN4M1"))
+{
+    logger.Info("User {user} signed in", "Josh");
+}
+```
+
+Both `requestId` and `user` end up in `context.properties`. On NLog 4, which has no `ScopeContext`, use `includeMdlc="true"` with `MappedDiagnosticsLogicalContext` instead.
+
+To attach a fixed property to every log, add a `<contextproperty>` to the target:
+
+```xml
+<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="<ingesting_host>">
+   <contextproperty name="service" layout="checkout" />
+</target>
+```
