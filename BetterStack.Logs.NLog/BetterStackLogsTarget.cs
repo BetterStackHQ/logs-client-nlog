@@ -57,6 +57,12 @@ namespace BetterStack.Logs.NLog
         public bool IncludeGlobalDiagnosticContext { get; set; } = true;
 
         /// <summary>
+        /// Maximum number of logs kept in memory while they wait to be sent. Once the queue holds that many,
+        /// new logs are dropped and an error is written to NLog's internal log.
+        /// </summary>
+        public int MaxQueueSize { get; set; } = 100000;
+
+        /// <summary>
         /// Control callsite capture of source-file and source-linenumber.
         /// </summary>
         public StackTraceUsage StackTraceUsage
@@ -95,6 +101,10 @@ namespace BetterStack.Logs.NLog
         {
             betterStackDrain?.Stop().Wait();
 
+            if (MaxQueueSize < 1) {
+                throw new NLogConfigurationException($"BetterStack.Logs: maxQueueSize is {MaxQueueSize}. Set it to 1 or more.");
+            }
+
             var sourceToken = RenderLogEvent(SourceToken, LogEventInfo.CreateNullEvent());
             var endpoint = RenderLogEvent(Endpoint, LogEventInfo.CreateNullEvent());
 
@@ -107,7 +117,8 @@ namespace BetterStack.Logs.NLog
             betterStackDrain = new Drain(
                 client,
                 period: TimeSpan.FromMilliseconds(FlushPeriodMilliseconds),
-                maxBatchSize: MaxBatchSize
+                maxBatchSize: MaxBatchSize,
+                maxQueueSize: MaxQueueSize
             );
 
             base.InitializeTarget();

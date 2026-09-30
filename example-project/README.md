@@ -220,6 +220,8 @@ This will create the following JSON output:
 The BetterStack.Logs target will send you logs periodically in batches to optimize network traffic with several retries in case of unexpected HTTP errors.
 You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMilliseconds`, and `retries` parameters to your custom values in your config.
 
+While the logs wait to be sent, the target keeps at most `maxQueueSize` of them in memory, 100000 by default. When the endpoint cannot be reached for a while and the queue fills up, new logs are dropped and an error is written to NLog's internal log.
+
 ```xml
 <target
    xsi:type="BetterStack.Logs"
@@ -228,6 +230,7 @@ You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMillisec
    sourceToken="<source_token>"
    endpoint="<ingesting_host>"
    maxBatchSize="200"
+   maxQueueSize="10000"
    flushPeriodMilliseconds="1000"
    retries="3" />
 ```
