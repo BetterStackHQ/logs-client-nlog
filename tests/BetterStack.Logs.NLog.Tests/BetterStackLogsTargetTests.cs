@@ -193,7 +193,9 @@ namespace BetterStack.Logs.NLog.Tests
         [Fact]
         public void SendsScopePropertiesWhenEnabled()
         {
-            var logger = LoggerFor(TargetWithScopeProperties());
+            var target = TargetWithScopeProperties();
+            target.FlushPeriodMilliseconds = 500; // both logs have to end up in the same request
+            var logger = LoggerFor(target);
 
             using (PushScopeProperty("requestId", "req-123")) {
                 logger.Info("User {user} signed in", "Josh");
