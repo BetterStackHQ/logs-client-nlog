@@ -105,13 +105,17 @@ namespace BetterStack.Logs.NLog
                 throw new NLogConfigurationException("BetterStack.Logs: endpoint is empty. Set it to the ingesting host of your Better Stack source.");
             }
             // The source settings show the ingesting host without a scheme
+            var endpointUrl = endpoint;
             if (!endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) {
-                endpoint = "https://" + endpoint;
+                endpointUrl = "https://" + endpoint;
+            }
+            if (!Uri.TryCreate(endpointUrl, UriKind.Absolute, out _)) {
+                throw new NLogConfigurationException($"BetterStack.Logs: endpoint is \"{endpoint}\". Set it to the ingesting host of your Better Stack source.");
             }
 
             var client = new Client(
                 sourceToken,
-                endpoint: endpoint,
+                endpoint: endpointUrl,
                 retries: Retries
             );
 
