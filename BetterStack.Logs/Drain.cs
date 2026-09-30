@@ -22,6 +22,8 @@ namespace BetterStack.Logs
         private readonly Task runningTask;
 
         private ConcurrentQueue<Log> queue = new ConcurrentQueue<Log>();
+        private readonly ConcurrentQueue<TaskCompletionSource<bool>> flushRequests = new ConcurrentQueue<TaskCompletionSource<bool>>();
+        private readonly SemaphoreSlim flushSignal = new SemaphoreSlim(0);
         private CancellationTokenSource cancellationTokenSource;
         // Kept on every enqueue and dequeue: ConcurrentQueue.Count walks all segments of the queue
         private int queueLength;
@@ -91,6 +93,22 @@ namespace BetterStack.Logs
             await runningTask;
         }
 
+        /// <summary>
+        /// Delivers the queued logs now instead of waiting for the next period. The returned task
+        /// completes once every log enqueued before the call has been sent or given up on.
+        /// </summary>
+        public Task Flush()
+        {
+            var request = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            flushRequests.Enqueue(request);
+            flushSignal.Release();
+
+            // A stopped drain has delivered everything already and picks up no more requests
+            if (runningTask.IsCompleted) request.TrySetResult(true);
+
+            return request.Task;
+        }
+
         private async Task run() {
             var nextDelay = period;
 
@@ -108,25 +126,35 @@ namespace BetterStack.Logs
                     nextDelay = period;
                 }
             } while (!cancellationTokenSource.IsCancellationRequested);
+
+            while (flushRequests.TryDequeue(out var request)) request.TrySetResult(true);
         }
 
         private async Task flush() {
-            while (!queue.IsEmpty) {
-                var expectedItemsCount = Math.Min(maxBatchSize, queue.Count);
-                var nextBatch = new List<Log>(expectedItemsCount);
+            // Taken before the queue is drained, so everything enqueued ahead of these requests is sent first
+            var requests = new List<TaskCompletionSource<bool>>();
+            while (flushRequests.TryDequeue(out var request)) requests.Add(request);
 
-                while (!queue.IsEmpty && nextBatch.Count < maxBatchSize) {
-                    if (queue.TryDequeue(out var log)) {
-                        Interlocked.Decrement(ref queueLength);
-                        nextBatch.Add(log);
+            try {
+                while (!queue.IsEmpty) {
+                    var expectedItemsCount = Math.Min(maxBatchSize, queue.Count);
+                    var nextBatch = new List<Log>(expectedItemsCount);
+
+                    while (!queue.IsEmpty && nextBatch.Count < maxBatchSize) {
+                        if (queue.TryDequeue(out var log)) {
+                            Interlocked.Decrement(ref queueLength);
+                            nextBatch.Add(log);
+                        }
+                    }
+
+                    if (nextBatch.Count > 0) {
+                        // The queue has room again: its next overflow is reported again
+                        Volatile.Write(ref overflowReported, 0);
+                        await client.Send(nextBatch);
                     }
                 }
-
-                if (nextBatch.Count > 0) {
-                    // The queue has room again: its next overflow is reported again
-                    Volatile.Write(ref overflowReported, 0);
-                    await client.Send(nextBatch);
-                }
+            } finally {
+                foreach (var request in requests) request.TrySetResult(true);
             }
         }
 
@@ -135,8 +163,9 @@ namespace BetterStack.Logs
             if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
 
             try {
-                await Task.Delay(delay, cancellationTokenSource.Token);
-            } catch (TaskCanceledException) {
+                // Waits for the period to pass, or for a Flush() to ask for delivery right away
+                await flushSignal.WaitAsync(delay, cancellationTokenSource.Token);
+            } catch (OperationCanceledException) {
                 // finish the rest of the loop to flush everything
             }
 
