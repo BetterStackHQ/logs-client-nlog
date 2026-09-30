@@ -42,6 +42,9 @@ namespace BetterStack.Logs
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {sourceToken}");
             httpClient.BaseAddress = new Uri(endpoint);
             httpClient.Timeout = timeout ?? TimeSpan.FromSeconds(10);
+            // On .NET Framework, every POST would wait for "100 Continue" (up to 350 ms) before sending its body.
+            // .NET Core and later never ask for it, there this changes nothing.
+            httpClient.DefaultRequestHeaders.ExpectContinue = false;
 
             this.retries = retries;
         }
