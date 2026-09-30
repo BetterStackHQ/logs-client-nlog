@@ -341,11 +341,13 @@ namespace BetterStack.Logs.NLog.Tests
         public void KeepsDeliveringAfterBatchRanOutOfRetries()
         {
             ingestion.StatusCodes.Enqueue(500);
+            ingestion.StatusCodes.Enqueue(500);
             var target = Target();
             target.Retries = 1;
             var logger = LoggerFor(target);
 
             logger.Info("Dropped");
+            Assert.Equal("Dropped", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
             Assert.Equal("Dropped", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
 
             logger.Info("Delivered");
@@ -357,18 +359,20 @@ namespace BetterStack.Logs.NLog.Tests
         {
             var internalLog = CaptureInternalLog();
             ingestion.StatusCodes.Enqueue(500);
+            ingestion.StatusCodes.Enqueue(500);
             var target = Target();
             target.Retries = 1;
             var logger = LoggerFor(target);
 
             logger.Info("Dropped");
             ingestion.NextRequest();
+            ingestion.NextRequest();
             // The next batch goes out after the dropped one has been logged
             logger.Info("Delivered");
             ingestion.NextRequest();
 
             Assert.Contains("BetterStack.Logs: request failed with status 500 Internal Server Error.", internalLog.ToString());
-            Assert.Contains("BetterStack.Logs: dropped 1 logs after 1 failed attempts.", internalLog.ToString());
+            Assert.Contains("BetterStack.Logs: dropped 1 logs after 2 failed attempts.", internalLog.ToString());
         }
 
         [Fact]
@@ -404,6 +408,44 @@ namespace BetterStack.Logs.NLog.Tests
             var retried = ingestion.NextRequest();
             Assert.Equal("Hello", (string)Assert.Single(failed.Logs)["message"]);
             Assert.Equal(failed.Body, retried.Body);
+        }
+
+        [Fact]
+        public void SendsTheBatchOnceWhenRetriesIsZero()
+        {
+            var internalLog = CaptureInternalLog();
+            ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.Retries = 0;
+            var logger = LoggerFor(target);
+
+            logger.Info("Dropped");
+            Assert.Equal("Dropped", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            // Goes out once the dropped batch has been given up on: a retry would arrive first
+            logger.Info("Delivered");
+            Assert.Equal("Delivered", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            Assert.Contains("BetterStack.Logs: dropped 1 logs after 1 failed attempts.", internalLog.ToString());
+        }
+
+        [Fact]
+        public void RetriesTheBatchAsManyTimesAsRetriesSays()
+        {
+            for (var i = 0; i < 3; i++) ingestion.StatusCodes.Enqueue(500);
+            var target = Target();
+            target.Retries = 2;
+            var logger = LoggerFor(target);
+
+            logger.Info("Dropped");
+            var first = ingestion.NextRequest();
+            Assert.Equal("Dropped", (string)Assert.Single(first.Logs)["message"]);
+            Assert.Equal(first.Body, ingestion.NextRequest().Body);
+            Assert.Equal(first.Body, ingestion.NextRequest().Body);
+
+            // Goes out once the dropped batch has been given up on: a further attempt would arrive first
+            logger.Info("Delivered");
+            Assert.Equal("Delivered", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
         }
 
         private System.IO.StringWriter CaptureInternalLog()
