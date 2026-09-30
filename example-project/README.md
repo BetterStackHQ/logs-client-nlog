@@ -58,7 +58,7 @@ This file is used to configure NLog using XML syntax. The content of the file sh
 
 	<targets>
     <!-- Dont forget to change <source_token> and <ingesting_host> to your actual source token and ingesting host-->
-		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="<ingesting_host>" />
+		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="https://<ingesting_host>" />
 	</targets>
 
 	<rules>
@@ -97,7 +97,7 @@ var logger = LogManager.GetCurrentClassLogger();
 ```
 
 This will create a logger for the current class.
-In this case, it will be created for the `Program` class and it will add `"logger_string"` with the value `"Program"` to the context of the JSON log message.
+In this case, it will be created for the `Program` class and it will add `"logger"` with the value `"Program"` to the context of the JSON log message.
 
 ### Colored property values
 
@@ -112,15 +112,10 @@ NLog.LogManager.Setup().SetupSerialization(
 
 ### Filter logs
 
-The name of the logger will also be present in the log message which will look something like this:
-
-```json
-"2022-01-26 10:25:06.0980|DEBUG|Program|Debugging is hard, but can be easier with Better Stack!"
-```
-
+The name of the logger is sent with every log message, in `context.logger`.
 This provides an option to filter logs based on the logger that sends them. You can create a logger for each of the logical components of your application and then filter the logs based on the names of the components. 
 
-For example, if you create a logger as a field of the `ShoppingCart` class, the value of `logger_string` will be `ShoppingCart` :
+For example, if you create a logger as a field of the `ShoppingCart` class, the value of `context.logger` will be `ShoppingCart`:
 
 ```csharp
 public class ShoppingCart
@@ -134,28 +129,29 @@ The output will look similar to this:
 
 ```json
 {
-   "dt":"2022-01-26 10:48:10.635 UTC",
+   "dt":"2026-09-30T15:14:25.854796+00:00",
+   "message":"Error !!!!!",
+   "level":"Error",
    "context":{
-      "logger_string":"ShoppingCart",
+      "logger":"ShoppingCart",
+      "properties":{},
       "runtime":{
-         "class_string":"ShoppingCart",
-         "file_string":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\ShoppingCart.cs",
-         "line_integer":"16",
-         "member_string":".ctor"
+         "class":"ShoppingCart",
+         "member":".ctor",
+         "file":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\ShoppingCart.cs",
+         "line":9
       }
-   },
-   "level_string":"Error",
-   "message_string":"2022-01-26 11:48:10.6354|ERROR|ExampleProject.ShoppingCart|Error !!!!!"
+   }
 }
 ```
 
 Then it is possible to filter the logs using the following search formula:
 
 ```json
-context.logger_string="ShoppingCart"
+context.logger="ShoppingCart"
 ```
 
-This will only show logs that were sent from to `ShoppingCart` logger.
+This will only show logs that were sent by the `ShoppingCart` logger.
 
 # Logging
 
@@ -175,7 +171,7 @@ To send a log message of select log level, use the corresponding method. In this
 
 ```csharp
 //Send debug messages using the Debug() method
-logger.Debug("Debugging is hard, but can be easier with Logtai!");
+logger.Debug("Debugging is hard, but can be easier with Better Stack!");
 
 //Send message about serious problems using the Error() method
 logger.Error("Error occurred! And it's not good.");
@@ -185,33 +181,71 @@ This will create the following JSON output:
 
 ```json
 {
-   "dt":"2022-01-26 09:25:06.098 UTC",
+   "dt":"2026-09-30T15:14:25.852543+00:00",
+   "message":"Debugging is hard, but can be easier with Better Stack!",
+   "level":"Debug",
    "context":{
-      "logger_string":"Program",
+      "logger":"Program",
+      "properties":{},
       "runtime":{
-         "class_string":"Program",
-         "file_string":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
-         "line_integer":"21",
-         "member_string":"<Main>$"
+         "class":"Program",
+         "member":"<Main>$",
+         "file":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
+         "line":25
       }
-   },
-   "level_string":"Debug",
-   "message_string":"2022-01-26 10:25:06.0980|DEBUG|Program|Debugging is hard, but can be easier with Logtai!"
+   }
 }
 
 {
-   "dt":"2022-01-26 09:25:06.098 UTC",
+   "dt":"2026-09-30T15:14:25.854796+00:00",
+   "message":"Error occurred! And it's not good.",
+   "level":"Error",
    "context":{
-      "logger_string":"Program",
+      "logger":"Program",
+      "properties":{},
       "runtime":{
-         "class_string":"Program",
-         "file_string":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
-         "line_integer":"32",
-         "member_string":"<Main>$"
+         "class":"Program",
+         "member":"<Main>$",
+         "file":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
+         "line":36
       }
-   },
-   "level_string":"Error",
-   "message_string":"2022-01-26 10:25:06.0980|ERROR|Program|Error occurred! And it's not good."
+   }
+}
+```
+
+To send an exception along with the log message, pass it as the first argument:
+
+```csharp
+try
+{
+    throw new InvalidOperationException("Payment gateway timed out");
+}
+catch (Exception ex)
+{
+    logger.Error(ex, "Order {orderId} failed", 75423);
+}
+```
+
+The exception, with its stack trace, is sent in the top-level `exception` field:
+
+```json
+{
+   "dt":"2026-09-30T15:14:25.854796+00:00",
+   "message":"Order 75423 failed",
+   "level":"Error",
+   "exception":"System.InvalidOperationException: Payment gateway timed out\r\n   at Program.<Main>$(String[] args) in C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs:line 43",
+   "context":{
+      "logger":"Program",
+      "properties":{
+         "orderId":75423
+      },
+      "runtime":{
+         "class":"Program",
+         "member":"<Main>$",
+         "file":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
+         "line":43
+      }
+   }
 }
 ```
 
@@ -226,7 +260,7 @@ You can adjust this behavior by setting the `maxBatchSize`, `flushPeriodMillisec
    name="mybetterstack"
    layout="${message}"
    sourceToken="<source_token>"
-   endpoint="<ingesting_host>"
+   endpoint="https://<ingesting_host>"
    maxBatchSize="200"
    flushPeriodMilliseconds="1000"
    retries="3" />
@@ -244,27 +278,27 @@ Code above will create the following output:
 
 ```json
 {
-   "dt":"2022-01-26 09:55:34.128 UTC",
+   "dt":"2026-09-30T15:14:25.852543+00:00",
+   "message":"User \"Josh\" - 95845 just ordered item 75423",
+   "level":"Info",
    "context":{
-      "logger_string":"Program",
-      "runtime":{
-         "class_string":"Program",
-         "file_string":"D:\\ExampleProject\\Program.cs",
-         "line_integer":"25",
-         "member_string":"<Main>$"
-      },
+      "logger":"Program",
       "properties":{
-         "item_integer":"75423",
-         "userID_integer":"95845",
-         "user_string":"Josh"
+         "user":"Josh",
+         "userID":95845,
+         "item":75423
+      },
+      "runtime":{
+         "class":"Program",
+         "member":"<Main>$",
+         "file":"C:\\Users\\someuser\\source\\repos\\ExampleProject\\ExampleProject\\Program.cs",
+         "line":30
       }
-   },
-   "level_string":"Info",
-   "message_string":"2022-01-26 10:55:34.1285|INFO|Program|User \"Josh\" - 95845 just ordered item 75423"
+   }
 }
 ```
 
-A new field called `properties` is added into the `context` and it contains the arguments that were passed and their values.
+The `properties` field of the `context` contains the arguments that were passed and their values.
 
 ## Adding context to all logs
 
@@ -276,7 +310,7 @@ Properties pushed to NLog's `ScopeContext` are sent with every log written insid
    name="mybetterstack"
    layout="${message}"
    sourceToken="<source_token>"
-   endpoint="<ingesting_host>"
+   endpoint="https://<ingesting_host>"
    includeScopeProperties="true" />
 ```
 
@@ -292,7 +326,7 @@ Both `requestId` and `user` end up in `context.properties`. On NLog 4, which has
 To attach a fixed property to every log, add a `<contextproperty>` to the target:
 
 ```xml
-<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="<ingesting_host>">
+<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="https://<ingesting_host>">
    <contextproperty name="service" layout="checkout" />
 </target>
 ```

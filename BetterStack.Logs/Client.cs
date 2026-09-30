@@ -26,6 +26,10 @@ namespace BetterStack.Logs
         // Ingestion rejects a request over 10 MB with 413, which loses every log in it. A batch goes out
         // in requests of at most half that, well clear of the limit.
         private const int MaxRequestSize = 5 * 1024 * 1024;
+        // Newtonsoft serializes nested values recursively: an object graph deep enough, like a long linked list
+        // in a property, overflows the stack of the delivery thread, which kills the process. MaxDepth of the
+        // settings only applies to reading. Nothing a log needs is nested anywhere near 64 levels.
+        private const int MaxDepth = 64;
 
         public Client(
             string sourceToken,
@@ -38,6 +42,8 @@ namespace BetterStack.Logs
             settings.Converters.Add(new ToStringJsonConverter(typeof(System.Reflection.MemberInfo)));
             settings.Converters.Add(new ToStringJsonConverter(typeof(System.Reflection.Assembly)));
             settings.Converters.Add(new ToStringJsonConverter(typeof(System.Reflection.Module)));
+            // Serializing a task reads its Result, which blocks the delivery until the task completes
+            settings.Converters.Add(new ToStringJsonConverter(typeof(Task)));
             settings.Error = (sender, args) =>
             {
                 args.ErrorContext.Handled = true;   // Ignore Properties that throws Exceptions
@@ -47,6 +53,9 @@ namespace BetterStack.Logs
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {sourceToken}");
             httpClient.BaseAddress = new Uri(endpoint);
             httpClient.Timeout = timeout ?? TimeSpan.FromSeconds(10);
+            // On .NET Framework, every POST would wait for "100 Continue" (up to 350 ms) before sending its body.
+            // .NET Core and later never ask for it, there this changes nothing.
+            httpClient.DefaultRequestHeaders.ExpectContinue = false;
 
             this.retries = retries;
         }
@@ -140,7 +149,14 @@ namespace BetterStack.Logs
         }
 
         private string serialize(Log log) {
-            return JsonConvert.SerializeObject(log, settings);
+            // What JsonConvert.SerializeObject does, through a writer that limits the depth
+            var serializer = JsonSerializer.CreateDefault(settings);
+            var json = new System.IO.StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+            using (var writer = new DepthLimitingJsonTextWriter(json)) {
+                writer.Formatting = serializer.Formatting;
+                serializer.Serialize(writer, log);
+            }
+            return json.ToString();
         }
 
         private HttpContent buildContent(byte[] payload) {
@@ -184,6 +200,35 @@ namespace BetterStack.Logs
             /// <inheritdoc />
             public override bool CanConvert(System.Type objectType) =>
                 _type.IsAssignableFrom(objectType);
+        }
+
+        /// <summary>
+        /// JSON writer that refuses to start an object or array nested deeper than MaxDepth. The serializer hands
+        /// that to the Error handler of the settings like any other failing property, which leaves the value out.
+        /// </summary>
+        private sealed class DepthLimitingJsonTextWriter : JsonTextWriter
+        {
+            public DepthLimitingJsonTextWriter(System.IO.TextWriter textWriter) : base(textWriter) { }
+
+            /// <inheritdoc />
+            public override void WriteStartObject()
+            {
+                checkDepth();
+                base.WriteStartObject();
+            }
+
+            /// <inheritdoc />
+            public override void WriteStartArray()
+            {
+                checkDepth();
+                base.WriteStartArray();
+            }
+
+            private void checkDepth()
+            {
+                // One level less than MaxDepth: each log is serialized on its own and then goes into the array of the request
+                if (Top >= MaxDepth - 1) throw new JsonSerializationException($"Nested deeper than {MaxDepth} levels.");
+            }
         }
     }
 }

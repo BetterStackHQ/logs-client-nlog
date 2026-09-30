@@ -70,6 +70,7 @@ namespace BetterStack.Logs.NLog.Tests
                     Path = context.Request.Url.AbsolutePath,
                     Authorization = context.Request.Headers["Authorization"],
                     ContentType = context.Request.ContentType,
+                    Expect = context.Request.Headers["Expect"],
                     Body = body,
                 });
 
@@ -84,6 +85,7 @@ namespace BetterStack.Logs.NLog.Tests
             public string Path { get; set; }
             public string Authorization { get; set; }
             public string ContentType { get; set; }
+            public string Expect { get; set; }
             public string Body { get; set; }
 
             // Dates stay strings, so tests can assert on exactly what was sent

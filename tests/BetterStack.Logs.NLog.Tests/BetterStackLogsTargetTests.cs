@@ -62,6 +62,15 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void DoesNotAskForContinueBeforeSendingLogs()
+        {
+            LoggerFor(Target()).Info("Hello");
+
+            // With "Expect: 100-continue", the client holds the body back until the server answers or 350 ms pass
+            Assert.Null(ingestion.NextRequest().Expect);
+        }
+
+        [Fact]
         public void SendsTimestampOfTheLogEvent()
         {
             var logEvent = new LogEventInfo(LogLevel.Info, "TestLogger", "Hello") {
@@ -85,6 +94,74 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void ReportsMissingSourceTokenAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.SourceToken = null;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: sourceToken is not set. Set it to the source token of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsEmptyEndpointAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Endpoint = "";
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: endpoint is empty. Set it to the ingesting host of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsEndpointWithoutHostAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Endpoint = "https://";
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: endpoint is \"https://\". Set it to the ingesting host of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
+        public void SendsToBareIngestingHostOverHttps()
+        {
+            // Stands in for the ingesting host: the start of a TLS handshake is all this test needs to see
+            var server = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            server.Start();
+            try {
+                var target = Target();
+                // Uri parses "localhost" of "localhost:1234" as the scheme
+                target.Endpoint = $"localhost:{((System.Net.IPEndPoint)server.LocalEndpoint).Port}";
+                target.Retries = 1;
+                LoggerFor(target).Info("Hello");
+
+                var connection = server.AcceptTcpClientAsync();
+                Assert.True(connection.Wait(TimeSpan.FromSeconds(30)), "No connection arrived within 30 seconds.");
+                using (var client = connection.Result) {
+                    client.ReceiveTimeout = 30000;
+                    // A TLS handshake record starts with 0x16, a plain http request with "POST"
+                    Assert.Equal(0x16, client.GetStream().ReadByte());
+                }
+            } finally {
+                server.Stop();
+            }
+        }
+
+        [Fact]
+        public void KeepsSchemeOfEndpointInAnyCase()
+        {
+            var target = Target();
+            target.Endpoint = ingestion.Endpoint.Replace("http://", "HTTP://");
+            LoggerFor(target).Info("Hello");
+
+            Assert.Equal("Hello", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+        }
+
+        [Fact]
         public void SendsExceptionOfTheLogEvent()
         {
             LoggerFor(Target()).Error(new InvalidOperationException("Payment gateway timed out"), "Order {orderId} failed", 75423);
@@ -101,6 +178,21 @@ namespace BetterStack.Logs.NLog.Tests
 
             var log = (JObject)Assert.Single(ingestion.NextRequest().Logs);
             Assert.False(log.ContainsKey("exception"));
+        }
+
+        [Fact]
+        public void SendsLogWhoseExceptionCannotBeRendered()
+        {
+            LoggerFor(Target()).Error(new NastyException(), "Order {orderId} failed", 75423);
+
+            var log = Assert.Single(ingestion.NextRequest().Logs);
+            Assert.Equal("Order 75423 failed", (string)log["message"]);
+            Assert.Equal("BetterStack.Logs.NLog.Tests.BetterStackLogsTargetTests+NastyException (its ToString() threw System.InvalidOperationException)", (string)log["exception"]);
+        }
+
+        private sealed class NastyException : Exception
+        {
+            public override string Message => throw new InvalidOperationException("The message is gone");
         }
 
         [Fact]
@@ -149,6 +241,81 @@ namespace BetterStack.Logs.NLog.Tests
             Assert.Equal(JTokenType.Null, runtime["line"].Type);
         }
 
+        [Theory]
+        [InlineData("Max")]
+        [InlineData("WithSource")]
+#if !NLOG_4
+        [InlineData("WithFileNameAndLineNumber")]
+#endif
+        public void SendsSourceLocationWhenStackTraceUsageAsksForSource(string stackTraceUsage)
+        {
+            var target = TargetFromXmlWithStackTraceUsage(stackTraceUsage);
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var runtime = Assert.Single(ingestion.NextRequest().Logs)["context"]["runtime"];
+            Assert.Equal("BetterStack.Logs.NLog.Tests.BetterStackLogsTargetTests", (string)runtime["class"]);
+            Assert.Equal("SendsSourceLocationWhenStackTraceUsageAsksForSource", (string)runtime["member"]);
+            Assert.EndsWith("BetterStackLogsTargetTests.cs", (string)runtime["file"]);
+            Assert.Equal(JTokenType.Integer, runtime["line"].Type);
+            Assert.True(target.CaptureSourceLocation);
+        }
+
+        [Theory]
+        [InlineData("WithoutSource")]
+#if !NLOG_4
+        [InlineData("WithCallSite")]
+        [InlineData("WithCallSiteClassName")]
+#endif
+        public void SendsClassAndMemberOnlyWhenStackTraceUsageAsksForNoSource(string stackTraceUsage)
+        {
+            var target = TargetFromXmlWithStackTraceUsage(stackTraceUsage);
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var runtime = Assert.Single(ingestion.NextRequest().Logs)["context"]["runtime"];
+            Assert.Equal("BetterStack.Logs.NLog.Tests.BetterStackLogsTargetTests", (string)runtime["class"]);
+            Assert.Equal("SendsClassAndMemberOnlyWhenStackTraceUsageAsksForNoSource", (string)runtime["member"]);
+            Assert.Equal(JTokenType.Null, runtime["file"].Type);
+            Assert.Equal(JTokenType.Null, runtime["line"].Type);
+            Assert.False(target.CaptureSourceLocation);
+        }
+
+        [Fact]
+        public void OmitsSourceLocationWhenStackTraceUsageIsNone()
+        {
+            var target = TargetFromXmlWithStackTraceUsage("None");
+            logFactory.GetLogger("TestLogger").Info("Hello");
+
+            var runtime = Assert.Single(ingestion.NextRequest().Logs)["context"]["runtime"];
+            Assert.Equal(JTokenType.Null, runtime["class"].Type);
+            Assert.Equal(JTokenType.Null, runtime["member"].Type);
+            Assert.Equal(JTokenType.Null, runtime["file"].Type);
+            Assert.Equal(JTokenType.Null, runtime["line"].Type);
+            Assert.False(target.CaptureSourceLocation);
+        }
+
+        // The values of StackTraceUsage differ between NLog 4.7, which the library is compiled against, and NLog 5 and
+        // later: set in XML, the value is parsed by the NLog loaded at run time
+        private BetterStackLogsTarget TargetFromXmlWithStackTraceUsage(string stackTraceUsage)
+        {
+            var xml = $@"
+                <nlog>
+                    <extensions>
+                        <add assembly=""BetterStack.Logs.NLog"" />
+                    </extensions>
+                    <targets>
+                        <target type=""BetterStack.Logs"" name=""betterstack"" layout=""${{message}}""
+                            sourceToken=""xml-source-token"" endpoint=""{ingestion.Endpoint}"" flushPeriodMilliseconds=""10""
+                            stackTraceUsage=""{stackTraceUsage}"" />
+                    </targets>
+                    <rules>
+                        <logger name=""*"" minlevel=""Trace"" writeTo=""betterstack"" />
+                    </rules>
+                </nlog>";
+            logFactory.Configuration = XmlLoggingConfiguration.CreateFromXmlString(xml, logFactory);
+
+            return logFactory.Configuration.FindTargetByName<BetterStackLogsTarget>("betterstack");
+        }
+
         [Fact]
         public void SendsGlobalDiagnosticsContextByDefault()
         {
@@ -183,6 +350,57 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void CutsOffPropertyNestedTooDeeply()
+        {
+            Node list = null;
+            for (var value = 2000; value >= 1; value--) list = new Node { Value = value, Next = list };
+            var target = Target();
+            target.FlushPeriodMilliseconds = 500;
+            var logger = LoggerFor(target);
+
+            logger.Info("Before");
+            logger.Info("{count} nodes in {list}", 2000, list);
+            logger.Info("After");
+
+            var logs = ingestion.NextRequest().Logs;
+            Assert.Equal("Before", (string)logs[0]["message"]);
+            Assert.Equal("After", (string)logs[2]["message"]);
+            var properties = logs[1]["context"]["properties"];
+            Assert.Equal(2000, (int)properties["count"]);
+            Assert.Equal(1, (int)properties["list"]["value"]);
+            Assert.Equal(2, (int)properties["list"]["next"]["value"]);
+            // Where exactly the list is cut off depends on how deep the property sits in the request
+            var nodes = 0;
+            for (var node = properties["list"]; node.Type == JTokenType.Object; node = node["next"]) nodes++;
+            Assert.InRange(nodes, 2, 63);
+        }
+
+        private sealed class Node
+        {
+            public int Value { get; set; }
+            public Node Next { get; set; }
+        }
+
+        [Fact]
+        public void SendsTaskPropertyAsStringWithoutWaitingForIt()
+        {
+            var pending = new System.Threading.Tasks.TaskCompletionSource<int>();
+            try {
+                var logger = LoggerFor(Target());
+
+                logger.Info("Waiting for {task}", pending.Task);
+                var properties = Assert.Single(ingestion.NextRequest().Logs)["context"]["properties"];
+                Assert.Equal("System.Threading.Tasks.Task`1[System.Int32]", (string)properties["task"]);
+
+                logger.Info("Next");
+                Assert.Equal("Next", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+            } finally {
+                // A delivery stuck on Task.Result would hold up the shutdown of the target for ever
+                pending.SetResult(0);
+            }
+        }
+
+        [Fact]
         public void OmitsScopePropertiesByDefault()
         {
             var logger = LoggerFor(Target());
@@ -198,7 +416,9 @@ namespace BetterStack.Logs.NLog.Tests
         [Fact]
         public void SendsScopePropertiesWhenEnabled()
         {
-            var logger = LoggerFor(TargetWithScopeProperties());
+            var target = TargetWithScopeProperties();
+            target.FlushPeriodMilliseconds = 500; // both logs have to end up in the same request
+            var logger = LoggerFor(target);
 
             using (PushScopeProperty("requestId", "req-123")) {
                 logger.Info("User {user} signed in", "Josh");
@@ -375,6 +595,26 @@ namespace BetterStack.Logs.NLog.Tests
             Assert.Equal(new[] { "Log 1", "Log 2" }, batches[0]);
             Assert.Equal(new[] { "Log 3", "Log 4" }, batches[1]);
             Assert.Equal(new[] { "Log 5" }, batches[2]);
+        }
+
+        [Fact]
+        public void DeliversPendingLogsOnFlush()
+        {
+            var target = Target();
+            target.FlushPeriodMilliseconds = 60000;
+            var logger = LoggerFor(target);
+
+            logger.Info("Before the first flush");
+            logFactory.Flush(TimeSpan.FromSeconds(10));
+
+            Assert.True(ingestion.HasRequest, "Flush returned before the pending log was delivered.");
+            Assert.Equal("Before the first flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+
+            logger.Info("Before the second flush");
+            logFactory.Flush(TimeSpan.FromSeconds(10));
+
+            Assert.True(ingestion.HasRequest, "The second flush returned before the pending log was delivered.");
+            Assert.Equal("Before the second flush", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
         }
 
         [Fact]
@@ -555,6 +795,49 @@ namespace BetterStack.Logs.NLog.Tests
             var log = Assert.Single(request.Logs);
             Assert.Equal("Tracing the code!", (string)log["message"]);
             Assert.Equal("Trace", (string)log["level"]);
+        }
+
+        [Fact]
+        public void ReportsMaxBatchSizeBelowOneAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.MaxBatchSize = 0;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: maxBatchSize is 0. Set it to 1 or more.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsFlushPeriodBelowOneMillisecondAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.FlushPeriodMilliseconds = 0;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: flushPeriodMilliseconds is 0. Set it to 1 or more.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsNegativeRetriesAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Retries = -1;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: retries is -1. Set it to 0 or more.", exception.Message);
+        }
+
+        [Fact]
+        public void AcceptsZeroRetries()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Retries = 0;
+
+            Assert.Null(Record.Exception(() => LoggerFor(target)));
         }
     }
 }

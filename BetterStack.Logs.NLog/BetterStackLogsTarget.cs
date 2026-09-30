@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using NLog;
+using NLog.Common;
 using NLog.Config;
 using NLog.Targets;
 using NLog.Layouts;
@@ -18,11 +19,11 @@ namespace BetterStack.Logs.NLog
         /// Gets or sets the Better Stack Logs source token.
         /// </summary>
         /// <value>The source token.</value>
-        [RequiredParameter]
         public Layout SourceToken { get; set; }
 
         /// <summary>
-        /// The Better Stack Logs endpoint.
+        /// The Better Stack Logs endpoint: the ingesting host of your source. https:// is added when it has no
+        /// http:// or https:// scheme.
         /// </summary>
         public Layout Endpoint { get; set; } = "https://in.logs.betterstack.com";
 
@@ -47,7 +48,7 @@ namespace BetterStack.Logs.NLog
         /// </summary>
         public bool CaptureSourceLocation
         {
-            get => StackTraceUsage == StackTraceUsage.Max;
+            get => (StackTraceUsage & StackTraceUsage.WithSource) != 0;
             set => StackTraceUsage = value ? StackTraceUsage.Max : StackTraceUsage.None;
         }
 
@@ -72,7 +73,11 @@ namespace BetterStack.Logs.NLog
                 else
                 {
                     IncludeCallSite = true;
-                    IncludeCallSiteStackTrace = value == StackTraceUsage.Max;
+                    // This library is compiled against NLog 4.7, where WithSource and Max are 2. NLog 5 made the enum
+                    // flags with other values, and a value from the configuration comes from the NLog loaded at run
+                    // time: there 2 is WithFileNameAndLineNumber, part of its WithSource and Max (3), while its
+                    // WithoutSource is 1 like in NLog 4.7. The bit 2 asks for the file and line on every version.
+                    IncludeCallSiteStackTrace = (value & StackTraceUsage.WithSource) != 0;
                 }
                 _stackTraceUsage = value;
             }
@@ -98,9 +103,34 @@ namespace BetterStack.Logs.NLog
             var sourceToken = RenderLogEvent(SourceToken, LogEventInfo.CreateNullEvent());
             var endpoint = RenderLogEvent(Endpoint, LogEventInfo.CreateNullEvent());
 
+            if (string.IsNullOrWhiteSpace(sourceToken)) {
+                throw new NLogConfigurationException("BetterStack.Logs: sourceToken is not set. Set it to the source token of your Better Stack source.");
+            }
+            if (string.IsNullOrWhiteSpace(endpoint)) {
+                throw new NLogConfigurationException("BetterStack.Logs: endpoint is empty. Set it to the ingesting host of your Better Stack source.");
+            }
+            // The source settings show the ingesting host without a scheme
+            var endpointUrl = endpoint;
+            if (!endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) {
+                endpointUrl = "https://" + endpoint;
+            }
+            if (!Uri.TryCreate(endpointUrl, UriKind.Absolute, out _)) {
+                throw new NLogConfigurationException($"BetterStack.Logs: endpoint is \"{endpoint}\". Set it to the ingesting host of your Better Stack source.");
+            }
+            // 0 would leave the drain spinning on a core: without taking any logs, or without waiting between flushes
+            if (MaxBatchSize < 1) {
+                throw new NLogConfigurationException($"BetterStack.Logs: maxBatchSize is {MaxBatchSize}. Set it to 1 or more.");
+            }
+            if (FlushPeriodMilliseconds < 1) {
+                throw new NLogConfigurationException($"BetterStack.Logs: flushPeriodMilliseconds is {FlushPeriodMilliseconds}. Set it to 1 or more.");
+            }
+            if (Retries < 0) {
+                throw new NLogConfigurationException($"BetterStack.Logs: retries is {Retries}. Set it to 0 or more.");
+            }
+
             var client = new Client(
                 sourceToken,
-                endpoint: endpoint,
+                endpoint: endpointUrl,
                 retries: Retries
             );
 
@@ -118,6 +148,12 @@ namespace BetterStack.Logs.NLog
         {
             betterStackDrain?.Stop().Wait();
             base.CloseTarget();
+        }
+
+        /// <inheritdoc/>
+        protected override void FlushAsync(AsyncContinuation asyncContinuation)
+        {
+            betterStackDrain.Flush().ContinueWith(task => asyncContinuation(task.Exception));
         }
 
         /// <inheritdoc/>
@@ -152,11 +188,19 @@ namespace BetterStack.Logs.NLog
             }
             string logMessage = RenderLogEvent(this.Layout, logEvent);
 
+            string exception;
+            try {
+                exception = logEvent.Exception?.ToString();
+            } catch (Exception ex) {
+                // An exception whose Message or ToString() throws must not cost the log itself
+                exception = $"{logEvent.Exception.GetType()} (its ToString() threw {ex.GetType()})";
+            }
+
             var log = new Log {
                 Timestamp = new DateTimeOffset(logEvent.TimeStamp),
                 Message = logMessage,
                 Level = logEvent.Level.Name,
-                Exception = logEvent.Exception?.ToString(),
+                Exception = exception,
                 Context = contextDictionary
             };
 
