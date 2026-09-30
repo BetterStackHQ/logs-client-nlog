@@ -22,7 +22,21 @@ namespace BetterStack.Logs.NLog
 
         public ColorValueFormatter(IValueFormatter valueFormatter = null)
         {
-            this.valueFormatter = valueFormatter != null ? valueFormatter : ConfigurationItemFactory.Default.ValueFormatter;
+            this.valueFormatter = valueFormatter != null ? valueFormatter : DefaultValueFormatter();
+        }
+
+        // This assembly is compiled against NLog 4.7 and also runs with NLog 5 and 6. NLog 5 moved the
+        // default formatter to LogFactory.ServiceRepository and NLog 6 removed
+        // ConfigurationItemFactory.ValueFormatter, so neither property can be referenced directly.
+        private static IValueFormatter DefaultValueFormatter()
+        {
+            var serviceRepository = typeof(LogFactory).GetProperty("ServiceRepository");
+            if (serviceRepository != null) {
+                var services = (IServiceProvider)serviceRepository.GetValue(LogManager.LogFactory);
+                return (IValueFormatter)services.GetService(typeof(IValueFormatter));
+            }
+
+            return (IValueFormatter)typeof(ConfigurationItemFactory).GetProperty("ValueFormatter").GetValue(ConfigurationItemFactory.Default);
         }
 
         public bool FormatValue(
