@@ -101,6 +101,17 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void ReportsEndpointWithoutHostAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Endpoint = "https://";
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: endpoint is \"https://\". Set it to the ingesting host of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
         public void SendsToBareIngestingHostOverHttps()
         {
             // Stands in for the ingesting host: the start of a TLS handshake is all this test needs to see
