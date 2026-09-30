@@ -22,6 +22,11 @@ namespace BetterStack.Logs
         };
         private readonly int retries;
 
+        // Newtonsoft serializes nested values recursively: an object graph deep enough, like a long linked list
+        // in a property, overflows the stack of the delivery thread, which kills the process. MaxDepth of the
+        // settings only applies to reading. Nothing a log needs is nested anywhere near 64 levels.
+        private const int MaxDepth = 64;
+
         public Client(
             string sourceToken,
             string endpoint = "https://in.logs.betterstack.com",
@@ -33,6 +38,8 @@ namespace BetterStack.Logs
             settings.Converters.Add(new ToStringJsonConverter(typeof(System.Reflection.MemberInfo)));
             settings.Converters.Add(new ToStringJsonConverter(typeof(System.Reflection.Assembly)));
             settings.Converters.Add(new ToStringJsonConverter(typeof(System.Reflection.Module)));
+            // Serializing a task reads its Result, which blocks the delivery until the task completes
+            settings.Converters.Add(new ToStringJsonConverter(typeof(Task)));
             settings.Error = (sender, args) =>
             {
                 args.ErrorContext.Handled = true;   // Ignore Properties that throws Exceptions
@@ -90,8 +97,14 @@ namespace BetterStack.Logs
         }
 
         private byte[] serialize(IEnumerable<Log> logs) {
-            var payload = JsonConvert.SerializeObject(logs, settings);
-            return Encoding.UTF8.GetBytes(payload);
+            // What JsonConvert.SerializeObject does, through a writer that limits the depth
+            var serializer = JsonSerializer.CreateDefault(settings);
+            var payload = new System.IO.StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+            using (var writer = new DepthLimitingJsonTextWriter(payload)) {
+                writer.Formatting = serializer.Formatting;
+                serializer.Serialize(writer, logs);
+            }
+            return Encoding.UTF8.GetBytes(payload.ToString());
         }
 
         private HttpContent buildContent(byte[] payload) {
@@ -135,6 +148,34 @@ namespace BetterStack.Logs
             /// <inheritdoc />
             public override bool CanConvert(System.Type objectType) =>
                 _type.IsAssignableFrom(objectType);
+        }
+
+        /// <summary>
+        /// JSON writer that refuses to start an object or array nested deeper than MaxDepth. The serializer hands
+        /// that to the Error handler of the settings like any other failing property, which leaves the value out.
+        /// </summary>
+        private sealed class DepthLimitingJsonTextWriter : JsonTextWriter
+        {
+            public DepthLimitingJsonTextWriter(System.IO.TextWriter textWriter) : base(textWriter) { }
+
+            /// <inheritdoc />
+            public override void WriteStartObject()
+            {
+                checkDepth();
+                base.WriteStartObject();
+            }
+
+            /// <inheritdoc />
+            public override void WriteStartArray()
+            {
+                checkDepth();
+                base.WriteStartArray();
+            }
+
+            private void checkDepth()
+            {
+                if (Top >= MaxDepth) throw new JsonSerializationException($"Nested deeper than {MaxDepth} levels.");
+            }
         }
     }
 }
