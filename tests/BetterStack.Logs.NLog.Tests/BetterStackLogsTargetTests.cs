@@ -177,6 +177,57 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void CutsOffPropertyNestedTooDeeply()
+        {
+            Node list = null;
+            for (var value = 2000; value >= 1; value--) list = new Node { Value = value, Next = list };
+            var target = Target();
+            target.FlushPeriodMilliseconds = 500;
+            var logger = LoggerFor(target);
+
+            logger.Info("Before");
+            logger.Info("{count} nodes in {list}", 2000, list);
+            logger.Info("After");
+
+            var logs = ingestion.NextRequest().Logs;
+            Assert.Equal("Before", (string)logs[0]["message"]);
+            Assert.Equal("After", (string)logs[2]["message"]);
+            var properties = logs[1]["context"]["properties"];
+            Assert.Equal(2000, (int)properties["count"]);
+            Assert.Equal(1, (int)properties["list"]["value"]);
+            Assert.Equal(2, (int)properties["list"]["next"]["value"]);
+            // Where exactly the list is cut off depends on how deep the property sits in the request
+            var nodes = 0;
+            for (var node = properties["list"]; node.Type == JTokenType.Object; node = node["next"]) nodes++;
+            Assert.InRange(nodes, 2, 63);
+        }
+
+        private sealed class Node
+        {
+            public int Value { get; set; }
+            public Node Next { get; set; }
+        }
+
+        [Fact]
+        public void SendsTaskPropertyAsStringWithoutWaitingForIt()
+        {
+            var pending = new System.Threading.Tasks.TaskCompletionSource<int>();
+            try {
+                var logger = LoggerFor(Target());
+
+                logger.Info("Waiting for {task}", pending.Task);
+                var properties = Assert.Single(ingestion.NextRequest().Logs)["context"]["properties"];
+                Assert.Equal("System.Threading.Tasks.Task`1[System.Int32]", (string)properties["task"]);
+
+                logger.Info("Next");
+                Assert.Equal("Next", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+            } finally {
+                // A delivery stuck on Task.Result would hold up the shutdown of the target for ever
+                pending.SetResult(0);
+            }
+        }
+
+        [Fact]
         public void OmitsScopePropertiesByDefault()
         {
             var logger = LoggerFor(Target());
