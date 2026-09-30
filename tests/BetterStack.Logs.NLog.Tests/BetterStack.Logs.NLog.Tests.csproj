@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(OS)' == 'Windows_NT'">$(TargetFrameworks);net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <!--
+      The library is compiled against the lowest NLog it supports. The version referenced here is
+      the one loaded at run time, like in an application that uses a newer NLog than the library.
+      Override with: dotnet test -p:NLogVersion=5.*
+    -->
+    <NLogVersion Condition="'$(NLogVersion)' == ''">4.7.11</NLogVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../BetterStack.Logs.NLog.csproj" />
+    <PackageReference Include="NLog" Version="$(NLogVersion)" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+</Project>
