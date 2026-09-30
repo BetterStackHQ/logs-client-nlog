@@ -88,6 +88,74 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void ReportsMissingSourceTokenAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.SourceToken = null;
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: sourceToken is not set. Set it to the source token of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsEmptyEndpointAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Endpoint = "";
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: endpoint is empty. Set it to the ingesting host of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
+        public void ReportsEndpointWithoutHostAsConfigurationError()
+        {
+            logFactory.ThrowConfigExceptions = true;
+            var target = Target();
+            target.Endpoint = "https://";
+
+            var exception = Assert.Throws<NLogConfigurationException>(() => LoggerFor(target));
+            Assert.Equal("BetterStack.Logs: endpoint is \"https://\". Set it to the ingesting host of your Better Stack source.", exception.Message);
+        }
+
+        [Fact]
+        public void SendsToBareIngestingHostOverHttps()
+        {
+            // Stands in for the ingesting host: the start of a TLS handshake is all this test needs to see
+            var server = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            server.Start();
+            try {
+                var target = Target();
+                // Uri parses "localhost" of "localhost:1234" as the scheme
+                target.Endpoint = $"localhost:{((System.Net.IPEndPoint)server.LocalEndpoint).Port}";
+                target.Retries = 1;
+                LoggerFor(target).Info("Hello");
+
+                var connection = server.AcceptTcpClientAsync();
+                Assert.True(connection.Wait(TimeSpan.FromSeconds(30)), "No connection arrived within 30 seconds.");
+                using (var client = connection.Result) {
+                    client.ReceiveTimeout = 30000;
+                    // A TLS handshake record starts with 0x16, a plain http request with "POST"
+                    Assert.Equal(0x16, client.GetStream().ReadByte());
+                }
+            } finally {
+                server.Stop();
+            }
+        }
+
+        [Fact]
+        public void KeepsSchemeOfEndpointInAnyCase()
+        {
+            var target = Target();
+            target.Endpoint = ingestion.Endpoint.Replace("http://", "HTTP://");
+            LoggerFor(target).Info("Hello");
+
+            Assert.Equal("Hello", (string)Assert.Single(ingestion.NextRequest().Logs)["message"]);
+        }
+
+        [Fact]
         public void SendsExceptionOfTheLogEvent()
         {
             LoggerFor(Target()).Error(new InvalidOperationException("Payment gateway timed out"), "Order {orderId} failed", 75423);
