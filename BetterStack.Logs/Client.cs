@@ -23,6 +23,9 @@ namespace BetterStack.Logs
         };
         private readonly int retries;
 
+        // Ingestion rejects a request over 10 MB with 413, which loses every log in it. A batch goes out
+        // in requests of at most half that, well clear of the limit.
+        private const int MaxRequestSize = 5 * 1024 * 1024;
         // Newtonsoft serializes nested values recursively: an object graph deep enough, like a long linked list
         // in a property, overflows the stack of the delivery thread, which kills the process. MaxDepth of the
         // settings only applies to reading. Nothing a log needs is nested anywhere near 64 levels.
@@ -63,8 +66,35 @@ namespace BetterStack.Logs
         /// </summary>
         public async Task Send(IEnumerable<Log> logs)
         {
-            var count = logs.Count();
-            var payload = serialize(logs);
+            var request = new List<string>();
+            // "[" and, after each log, the "," or "]" that follows it
+            var requestSize = 1;
+
+            foreach (var log in logs) {
+                var serializedLog = serialize(log);
+                var size = Encoding.UTF8.GetByteCount(serializedLog);
+
+                if (1 + size + 1 > MaxRequestSize) {
+                    global::NLog.Common.InternalLogger.Error("BetterStack.Logs: dropped a log of {0} bytes, over the limit of {1} bytes for a request.", size, MaxRequestSize);
+                    continue;
+                }
+                if (requestSize + size + 1 > MaxRequestSize) {
+                    await sendWithRetries(request);
+                    request = new List<string>();
+                    requestSize = 1;
+                }
+
+                request.Add(serializedLog);
+                requestSize += size + 1;
+            }
+
+            if (request.Count > 0) await sendWithRetries(request);
+        }
+
+        private async Task sendWithRetries(List<string> serializedLogs)
+        {
+            var count = serializedLogs.Count;
+            var payload = Encoding.UTF8.GetBytes("[" + string.Join(",", serializedLogs) + "]");
 
             // retries counts the attempts after the first one
             for (int i = 0; i <= retries; ++i) {
@@ -118,15 +148,15 @@ namespace BetterStack.Logs
             return null;
         }
 
-        private byte[] serialize(IEnumerable<Log> logs) {
+        private string serialize(Log log) {
             // What JsonConvert.SerializeObject does, through a writer that limits the depth
             var serializer = JsonSerializer.CreateDefault(settings);
-            var payload = new System.IO.StringWriter(System.Globalization.CultureInfo.InvariantCulture);
-            using (var writer = new DepthLimitingJsonTextWriter(payload)) {
+            var json = new System.IO.StringWriter(System.Globalization.CultureInfo.InvariantCulture);
+            using (var writer = new DepthLimitingJsonTextWriter(json)) {
                 writer.Formatting = serializer.Formatting;
-                serializer.Serialize(writer, logs);
+                serializer.Serialize(writer, log);
             }
-            return Encoding.UTF8.GetBytes(payload.ToString());
+            return json.ToString();
         }
 
         private HttpContent buildContent(byte[] payload) {
@@ -196,7 +226,8 @@ namespace BetterStack.Logs
 
             private void checkDepth()
             {
-                if (Top >= MaxDepth) throw new JsonSerializationException($"Nested deeper than {MaxDepth} levels.");
+                // One level less than MaxDepth: each log is serialized on its own and then goes into the array of the request
+                if (Top >= MaxDepth - 1) throw new JsonSerializationException($"Nested deeper than {MaxDepth} levels.");
             }
         }
     }

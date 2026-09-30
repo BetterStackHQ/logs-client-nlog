@@ -517,6 +517,71 @@ namespace BetterStack.Logs.NLog.Tests
         }
 
         [Fact]
+        public void SplitsBatchIntoRequestsOfAtMostFiveMegabytes()
+        {
+            var target = Target();
+            target.FlushPeriodMilliseconds = 500;
+            var logger = LoggerFor(target);
+            // Like a long stack trace: a batch of 1000 such logs is over the 10 MB ingestion takes
+            var exception = new InvalidOperationException(new string('x', 12 * 1024));
+
+            for (var i = 1; i <= 1000; i++) logger.Error(exception, "Log " + i);
+
+            var requestSizes = new System.Collections.Generic.List<int>();
+            var messages = new System.Collections.Generic.List<string>();
+            while (messages.Count < 1000) {
+                var request = ingestion.NextRequest();
+                requestSizes.Add(System.Text.Encoding.UTF8.GetByteCount(request.Body));
+                messages.AddRange(request.Logs.Select(log => (string)log["message"]));
+            }
+
+            Assert.Equal(Enumerable.Range(1, 1000).Select(i => "Log " + i), messages);
+            Assert.All(requestSizes, size => Assert.InRange(size, 0, 5 * 1024 * 1024));
+        }
+
+        [Fact]
+        public void DropsLogTooLargeForOneRequest()
+        {
+            var internalLog = CaptureInternalLog();
+            var target = Target();
+            target.FlushPeriodMilliseconds = 500;
+            target.CaptureSourceLocation = false;
+            var logger = LoggerFor(target);
+
+            logger.Info("Before");
+            logger.Log(new LogEventInfo(LogLevel.Info, "TestLogger", new string('x', 6 * 1024 * 1024)) {
+                TimeStamp = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+            });
+            logger.Info("After");
+
+            Assert.Equal(new[] { "Before", "After" }, ingestion.NextRequest().Logs.Select(log => (string)log["message"]));
+            Assert.Contains("BetterStack.Logs: dropped a log of 6291631 bytes, over the limit of 5242880 bytes for a request.", internalLog.ToString());
+        }
+
+        [Fact]
+        public void SendsSmallBatchInOneRequest()
+        {
+            var target = Target();
+            target.FlushPeriodMilliseconds = 500;
+            target.CaptureSourceLocation = false;
+            var logger = LoggerFor(target);
+            var timeStamp = new DateTime(2026, 1, 2, 3, 4, 5, 678, DateTimeKind.Utc);
+
+            logger.Log(new LogEventInfo(LogLevel.Info, "TestLogger", null, "Order {orderId} placed", new object[] { 75423 }) {
+                TimeStamp = timeStamp,
+            });
+            logger.Log(new LogEventInfo(LogLevel.Error, "TestLogger", "Payment failed") {
+                TimeStamp = timeStamp,
+                Exception = new InvalidOperationException("Payment gateway timed out"),
+            });
+
+            Assert.Equal(
+                @"[{""dt"":""2026-01-02T03:04:05.678+00:00"",""message"":""Order 75423 placed"",""level"":""Info"",""context"":{""logger"":""TestLogger"",""properties"":{""orderId"":75423},""runtime"":{""class"":null,""member"":null,""file"":null,""line"":null}}}," +
+                @"{""dt"":""2026-01-02T03:04:05.678+00:00"",""message"":""Payment failed"",""level"":""Error"",""exception"":""System.InvalidOperationException: Payment gateway timed out"",""context"":{""logger"":""TestLogger"",""properties"":{},""runtime"":{""class"":null,""member"":null,""file"":null,""line"":null}}}]",
+                ingestion.NextRequest().Body);
+        }
+
+        [Fact]
         public void SplitsLogsIntoBatches()
         {
             var target = Target();
