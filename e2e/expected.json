@@ -1,0 +1,43 @@
+[
+  {
+    "level": "Trace",
+    "message": "Tracing the code!",
+    "contains": {"context": {"logger": "Program", "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 30}}}
+  },
+  {
+    "level": "Debug",
+    "message": "Debugging is hard, but can be easier with Better Stack!",
+    "contains": {"context": {"logger": "Program", "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 33}}}
+  },
+  {
+    "level": "Info",
+    "message_prefix": "User \u001b[36;1m",
+    "contains": {
+      "message": "\u001b[0m - \u001b[33;1m95845\u001b[0m just ordered item \u001b[33;1m75423\u001b[0m",
+      "context": {"logger": "Program", "properties": {"user": "Josh", "userID": 95845, "item": 75423}, "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 38}}
+    }
+  },
+  {
+    "level": "Warn",
+    "message": "Something is happening!",
+    "contains": {"context": {"logger": "Program", "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 41}}}
+  },
+  {
+    "level": "Error",
+    "message": "Error occurred! And it's not good.",
+    "contains": {"context": {"logger": "Program", "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 44}}}
+  },
+  {
+    "level": "Error",
+    "message": "Order \u001b[33;1m75423\u001b[0m failed",
+    "contains": {
+      "exception": "System.InvalidOperationException: Payment gateway timed out",
+      "context": {"logger": "Program", "properties": {"orderId": 75423}, "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 50}}
+    }
+  },
+  {
+    "level": "Fatal",
+    "message": "Application crashed! Needs to be fixed ASAP!",
+    "contains": {"context": {"logger": "Program", "runtime": {"class": "Program", "member": "<Main>$", "file": "Program.cs", "line": 58}}}
+  }
+]

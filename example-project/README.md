@@ -8,9 +8,9 @@ You can download the example project from GitHub directly or you can clone it to
 
 ## Run the example project using Visual Studio
 
-Replace `<source_token>` and `<ingesting_host>` with your actual source token and ingesting host in the `nlog.config` file. You can find both values by going to [Better Stack Telemetry](https://telemetry.betterstack.com/dashboard) -> Sources -> Configure.
+The `nlog.config` file reads your source token and ingesting host from the `BETTER_STACK_SOURCE_TOKEN` and `BETTER_STACK_INGESTING_HOST` environment variables. You can find both values by going to [Better Stack Telemetry](https://telemetry.betterstack.com/dashboard) -> Sources -> Configure.
 
-Open the `.csproj` file in the Visual Studio. Then click on the green play button `ExampleProject` or press **F5** to run the application.
+Open the `.csproj` file in the Visual Studio and add both environment variables to the project's launch profile in **Debug** -> **ExampleProject Debug Properties**. Then click on the green play button `ExampleProject` or press **F5** to run the application.
 
 You should see the following output:
 
@@ -20,12 +20,19 @@ All done! Now, you can check Better Stack to see your logs
 
 ## Run in the command line
 
-Replace `<source_token>` and `<ingesting_host>` with your actual source token and ingesting host in the `nlog.config` file. You can find both values by going to [Better Stack Telemetry](https://telemetry.betterstack.com/dashboard) -> Sources -> Configure.
+The `nlog.config` file reads your source token and ingesting host from the `BETTER_STACK_SOURCE_TOKEN` and `BETTER_STACK_INGESTING_HOST` environment variables. You can find both values by going to [Better Stack Telemetry](https://telemetry.betterstack.com/dashboard) -> Sources -> Configure.
 
+Open the command line in the projects directory, set both environment variables and run the example:
 
-Open the command line in the projects directory and enter the following command:
+```sh
+BETTER_STACK_SOURCE_TOKEN=<source_token> BETTER_STACK_INGESTING_HOST=<ingesting_host> dotnet run
+```
+
+In PowerShell:
 
 ```powershell
+$env:BETTER_STACK_SOURCE_TOKEN = "<source_token>"
+$env:BETTER_STACK_INGESTING_HOST = "<ingesting_host>"
 dotnet run
 ```
 
@@ -57,8 +64,8 @@ This file is used to configure NLog using XML syntax. The content of the file sh
 	</extensions>
 
 	<targets>
-    <!-- Dont forget to change <source_token> and <ingesting_host> to your actual source token and ingesting host-->
-		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="<source_token>" endpoint="https://<ingesting_host>" />
+    <!-- The source token and ingesting host come from the environment variables BETTER_STACK_SOURCE_TOKEN and BETTER_STACK_INGESTING_HOST -->
+		<target xsi:type="BetterStack.Logs" name="mybetterstack" layout="${message}" sourceToken="${environment:BETTER_STACK_SOURCE_TOKEN}" endpoint="https://${environment:BETTER_STACK_INGESTING_HOST}" />
 	</targets>
 
 	<rules>
@@ -67,7 +74,7 @@ This file is used to configure NLog using XML syntax. The content of the file sh
 </nlog>
 ```
 
-Make sure that you replace `<source_token>` and `<ingesting_host>` with the actual source token and ingesting host that you can find in the Source settings.
+Set the `BETTER_STACK_SOURCE_TOKEN` and `BETTER_STACK_INGESTING_HOST` environment variables to the source token and ingesting host that you can find in the Source settings. You can also write both values into the file instead: `sourceToken="<source_token>" endpoint="https://<ingesting_host>"`.
 
 Also, **make sure that the** `nlog.config` **file is set to be copied to the output directory** when running the application. 
 
@@ -270,7 +277,7 @@ While the logs wait to be sent, the target keeps at most `maxQueueSize` of them 
    maxFlushTimeMilliseconds="10000" />
 ```
 
-When the application shuts down, the target waits at most `maxFlushTimeMilliseconds` (30 seconds by default) for the queued logs to be sent, so an endpoint that cannot be reached does not hold the shutdown. Logs that could not be sent by then are dropped. `LogManager.Flush()` does not wait longer than that either. Set it to `0` to wait until every log has been sent or has run out of retries.
+Call `LogManager.Shutdown()` before your application exits, as the example does, so that the target sends the logs still in its queue. When the application shuts down, the target waits at most `maxFlushTimeMilliseconds` (30 seconds by default) for the queued logs to be sent, so an endpoint that cannot be reached does not hold the shutdown. Logs that could not be sent by then are dropped. `LogManager.Flush()` does not wait longer than that either. Set it to `0` to wait until every log has been sent or has run out of retries.
 
 ## Structuring the logs
 
