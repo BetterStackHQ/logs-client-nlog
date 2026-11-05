@@ -13,6 +13,9 @@
 set -euo pipefail
 # A native jq.exe, as on Windows runners, ends its output lines with CRLF unless given -b.
 if [ "${OS:-}" = Windows_NT ]; then jq() { command jq -b "$@"; }; fi
+# Git Bash on Windows rewrites arguments of native programs that look like paths, and turns the nuget.org URL into
+# D:\...\https:\api.nuget.org\v3\index.json. Nothing handed to dotnet here needs rewriting.
+if [ "${OS:-}" = Windows_NT ]; then export MSYS_NO_PATHCONV=1; fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$ROOT/out
