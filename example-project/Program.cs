@@ -7,6 +7,14 @@
 
 using NLog;
 
+// nlog.config reads the source token and ingesting host from the environment
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("BETTER_STACK_SOURCE_TOKEN")) ||
+    string.IsNullOrEmpty(Environment.GetEnvironmentVariable("BETTER_STACK_INGESTING_HOST")))
+{
+    Console.Error.WriteLine("Usage: BETTER_STACK_SOURCE_TOKEN=<source_token> BETTER_STACK_INGESTING_HOST=<ingesting_host> dotnet run");
+    return 1;
+}
+
 // Configure NLog to color properties based on their type
 NLog.LogManager.Setup().SetupSerialization(
     setupBuilder => setupBuilder.RegisterValueFormatter(new BetterStack.Logs.NLog.ColorValueFormatter())
@@ -35,7 +43,22 @@ logger.Warn("Something is happening!");
 // Send message about serious problems using the Error() method
 logger.Error("Error occurred! And it's not good.");
 
+// Send an exception along with the message by passing it as the first argument
+// The exception, with its stack trace, is sent in the exception field of the logged event
+try
+{
+    throw new InvalidOperationException("Payment gateway timed out");
+}
+catch (Exception ex)
+{
+    logger.Error(ex, "Order {orderId} failed", 75423);
+}
+
 // Report fatal errors that caused application to crash using the Fatal() method
 logger.Fatal("Application crashed! Needs to be fixed ASAP!");
 
+// Send the logs still waiting in the queue before the application exits
+LogManager.Shutdown();
+
 Console.WriteLine("All done! Now, you can check Better Stack to see your logs");
+return 0;
