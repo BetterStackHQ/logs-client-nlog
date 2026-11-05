@@ -13,9 +13,6 @@
 set -euo pipefail
 # A native jq.exe, as on Windows runners, ends its output lines with CRLF unless given -b.
 if [ "${OS:-}" = Windows_NT ]; then jq() { command jq -b "$@"; }; fi
-# Git Bash on Windows rewrites arguments of native programs that look like paths, and turns the nuget.org URL into
-# D:\...\https:\api.nuget.org\v3\index.json. Nothing handed to dotnet here needs rewriting.
-if [ "${OS:-}" = Windows_NT ]; then export MSYS_NO_PATHCONV=1; fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=$ROOT/out
@@ -50,15 +47,27 @@ case "$1" in
       # (GeneratePackageOnBuild), which `dotnet pack` cannot be combined with.
       log dotnet build BetterStack.Logs.NLog.csproj --configuration Release -p:Version="$CLIENT" -p:ContinuousIntegrationBuild=true -p:PackageOutputPath=artifacts
       log dotnet add example-project package BetterStack.Logs.NLog --version "$CLIENT" --no-restore
-      SOURCES=(--source artifacts --source https://api.nuget.org/v3/index.json)
+      LOCAL='<add key="checkout" value="../artifacts" />'
     else
       # The example's own version range picks the release, as for a customer who copies the example.
-      SOURCES=(--source https://api.nuget.org/v3/index.json)
+      LOCAL=""
     fi
+    # The package sources, in a nuget.config next to the example as for a local feed of one's own. Not --source: on the
+    # Windows runner, the nuget.org URL reached NuGet as https:\api.nuget.org\v3\index.json, a local path.
+    cat > example-project/nuget.config <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    $LOCAL
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+EOF
     # Exact versions, so that NuGet cannot quietly resolve another one.
     log dotnet add example-project package NLog --version "$NLOG" --no-restore
     log dotnet add example-project package Newtonsoft.Json --version "$NEWTONSOFT" --no-restore
-    log dotnet restore example-project "${PROPS[@]}" "${SOURCES[@]}"
+    log dotnet restore example-project "${PROPS[@]}"
     log dotnet build example-project --no-restore "${PROPS[@]}" ;;
 
   verify)
