@@ -101,9 +101,15 @@ EOF
     CLIENT_RESOLVED=$(resolved BetterStack.Logs.NLog)
     NLOG_RESOLVED=$(resolved NLog)
     NEWTONSOFT_RESOLVED=$(resolved Newtonsoft.Json)
-    # Where NuGet took the package from, recorded next to it in the global packages folder.
-    PACKAGES=$(jq -r '.packageFolders | keys[0]' "$ASSETS")
-    CLIENT_SOURCE=$(jq -r .source "$PACKAGES/betterstack.logs.nlog/$CLIENT_RESOLVED/.nupkg.metadata" 2>/dev/null) || CLIENT_SOURCE=unknown
+    # Where NuGet took the package from, recorded next to it in the packages folder the restore found it in: the global
+    # packages folder, which the assets file lists first, or one of the fallback folders after it (Visual Studio
+    # registers one on the Windows image), searched in that order.
+    CLIENT_PATH=$(jq -r --arg library "BetterStack.Logs.NLog/$CLIENT_RESOLVED" '.libraries[$library].path' "$ASSETS")
+    CLIENT_SOURCE="an unknown source: no $CLIENT_PATH/.nupkg.metadata in $(jq -r '.packageFolders | keys_unsorted | join(", ")' "$ASSETS")"
+    while IFS= read -r FOLDER; do
+      METADATA="${FOLDER%[/\\]}/$CLIENT_PATH/.nupkg.metadata"
+      if [ -f "$METADATA" ]; then CLIENT_SOURCE=$(jq -r .source "$METADATA"); break; fi
+    done < <(jq -r '.packageFolders | keys_unsorted[]' "$ASSETS")
     if [ "$CLIENT_FROM" = checkout ]; then FROM="packed from the checkout"; else FROM="from $CLIENT_SOURCE"; fi
     echo "- $RUNNING, SDK $SDK_RUNNING, example built for $BUILT_FOR, BetterStack.Logs.NLog $CLIENT_RESOLVED $FROM, NLog $NLOG_RESOLVED, Newtonsoft.Json $NEWTONSOFT_RESOLVED" \
       | tee -a "$OUT/versions.md" "${GITHUB_STEP_SUMMARY:-/dev/null}"
